@@ -31,4 +31,12 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    import os
+    # Read the port Render provides, default to 8000 locally
+    port = int(os.environ.get("PORT", 8000))
+    # Bind to 0.0.0.0 in production (Render), 127.0.0.1 locally
+    host = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
+    # Disable reload in production to optimize performance
+    reload = False if os.environ.get("PORT") else True
+    
+    uvicorn.run("app.main:app", host=host, port=port, reload=reload)
