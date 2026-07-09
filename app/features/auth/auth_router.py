@@ -21,6 +21,7 @@ async def create_mechanic_user(user_data: UserRegister, admin: str = Depends(get
     
     new_user = User(
         full_name=user_data.full_name,
+        phone_code=user_data.phone_code,
         phone_number=user_data.phone_number,
         salary_monthly=user_data.salary_monthly,
         experience=user_data.experience,

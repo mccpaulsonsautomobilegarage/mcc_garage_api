@@ -1,0 +1,127 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from typing import List, Optional
+from beanie import PydanticObjectId
+from app.features.invoice.invoice_models import Invoice, InvoiceCreate, InvoiceUpdate, InvoiceOut, PaymentStatus
+from app.features.job_card.job_card_models import JobCard
+from app.core.security import get_current_user
+from datetime import datetime
+
+router = APIRouter(prefix="/invoices", tags=["Invoices"])
+
+async def generate_next_invoice_no() -> str:
+    # Find the latest registered invoice sorted by creation time
+    last_invoices = await Invoice.find_all().sort("-created_at").limit(1).to_list()
+    if not last_invoices:
+        return "INV-2401"
+    
+    last_invoice_no = last_invoices[0].invoice_no
+    try:
+        parts = last_invoice_no.split("-")
+        if len(parts) == 2:
+            num = int(parts[1])
+            return f"INV-{num + 1}"
+    except (ValueError, IndexError):
+        pass
+    
+    return "INV-2401"
+
+@router.post("", response_model=InvoiceOut, status_code=status.HTTP_201_CREATED)
+async def create_invoice(invoice_data: InvoiceCreate, current_user: dict = Depends(get_current_user)):
+    # 1. Verify Job Card exists
+    job_card = await JobCard.get(invoice_data.job_card_id)
+    if not job_card:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The linked Job Card does not exist"
+        )
+        
+    next_invoice_no = await generate_next_invoice_no()
+    
+    new_invoice = Invoice(
+        invoice_no=next_invoice_no,
+        job_card_id=invoice_data.job_card_id,
+        spare_parts=invoice_data.spare_parts,
+        labor_charges=invoice_data.labor_charges,
+        payment_status=invoice_data.payment_status,
+        payment_method=invoice_data.payment_method,
+        paid_amount=invoice_data.paid_amount,
+        created_by=current_user["username"]
+    )
+    
+    # Calculate totals before inserting
+    new_invoice.calculate_totals()
+    
+    await new_invoice.insert()
+    return new_invoice
+
+@router.get("", response_model=List[InvoiceOut])
+async def list_invoices(
+    job_card_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by Job Card ID"),
+    payment_status: Optional[PaymentStatus] = Query(default=None, description="Filter by payment status"),
+    search: Optional[str] = Query(default=None, description="Search by Invoice Number (case-insensitive)"),
+    current_user: dict = Depends(get_current_user)
+):
+    query = {}
+    if job_card_id:
+        query["job_card_id"] = job_card_id
+    if payment_status:
+        query["payment_status"] = payment_status
+    if search:
+        query["invoice_no"] = {"$regex": search.strip().upper(), "$options": "i"}
+        
+    invoices = await Invoice.find(query).to_list()
+    return invoices
+
+@router.get("/{id}", response_model=InvoiceOut)
+async def get_invoice(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
+    invoice = await Invoice.get(id)
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+    return invoice
+
+@router.put("/{id}", response_model=InvoiceOut)
+async def update_invoice(
+    id: PydanticObjectId,
+    invoice_data: InvoiceUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    invoice = await Invoice.get(id)
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+        
+    # Verify Job Card if updated
+    if invoice_data.job_card_id and invoice_data.job_card_id != invoice.job_card_id:
+        job_card = await JobCard.get(invoice_data.job_card_id)
+        if not job_card:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The linked Job Card does not exist"
+            )
+            
+    update_dict = invoice_data.model_dump(exclude_unset=True)
+    for key, value in update_dict.items():
+        setattr(invoice, key, value)
+        
+    # Recalculate totals after updating values
+    invoice.calculate_totals()
+    
+    invoice.updated_at = datetime.utcnow()
+    await invoice.save()
+    return invoice
+
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_invoice(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
+    invoice = await Invoice.get(id)
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+    await invoice.delete()
+    return None

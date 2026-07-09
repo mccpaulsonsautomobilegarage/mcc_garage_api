@@ -4,33 +4,28 @@ from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field, field_validator
 import re
 
-def clean_and_format_phone(v: str) -> str:
-    # Remove all non-digit and non-plus characters
+def clean_phone_code(v: str) -> str:
     cleaned = re.sub(r'[^\d+]', '', v)
-    
-    # Check if it has a plus sign and seems like a full international number
-    if cleaned.startswith('+'):
-        if len(cleaned) >= 8:
-            return cleaned
-        raise ValueError('Invalid phone number format')
-        
-    # If it is exactly 10 digits, prepend +91
-    if len(cleaned) == 10 and cleaned.isdigit():
-        return f"+91{cleaned}"
-        
-    # If it already starts with 91 and has 12 digits (but no +), prepending + is also good
-    if len(cleaned) == 12 and cleaned.startswith('91'):
-        return f"+{cleaned}"
-        
-    raise ValueError('Phone number must be a 10-digit number or include a country code')
+    if not cleaned.startswith('+'):
+        cleaned = f"+{cleaned}"
+    if len(cleaned) < 2:
+        raise ValueError('Invalid phone country code format')
+    return cleaned
+
+def clean_phone_number(v: str) -> str:
+    cleaned = re.sub(r'\D', '', v)
+    if len(cleaned) < 4 or len(cleaned) > 15:
+        raise ValueError('Phone number must be between 4 and 15 digits')
+    return cleaned
 
 class CustomerBase(BaseModel):
     name: str = Field(..., min_length=1, description="Customer's full name")
+    phone_code: str = Field(default="+91", description="Customer's mobile country code")
     phone_number: str = Field(..., description="Customer's mobile number")
+    whatsapp_code: str = Field(default="+91", description="Customer's WhatsApp country code")
     whatsapp_number: str = Field(..., description="Customer's WhatsApp number")
     email: Optional[str] = Field(default=None, description="Optional email address")
-    address: str = Field(..., min_length=1, description="Customer's address")
-    gst_number: Optional[str] = Field(default=None, description="Optional GST number")
+    address: Optional[str] = Field(default=None, description="Optional customer address")
     notes: Optional[str] = Field(default=None, description="Optional customer notes")
 
 class Customer(Document, CustomerBase):
@@ -42,34 +37,54 @@ class Customer(Document, CustomerBase):
         name = "customers"
         indexes = [
             "phone_number",
+            "phone_code",
             "name",
         ]
 
 class CustomerCreate(CustomerBase):
+    @field_validator('phone_code', 'whatsapp_code')
+    @classmethod
+    def validate_phone_code(cls, v: str) -> str:
+        try:
+            return clean_phone_code(v)
+        except ValueError as e:
+            raise ValueError(str(e))
+
     @field_validator('phone_number', 'whatsapp_number')
     @classmethod
-    def format_phone_fields(cls, v: str) -> str:
+    def validate_phone_number(cls, v: str) -> str:
         try:
-            return clean_and_format_phone(v)
+            return clean_phone_number(v)
         except ValueError as e:
             raise ValueError(str(e))
 
 class CustomerUpdate(BaseModel):
     name: Optional[str] = None
+    phone_code: Optional[str] = None
     phone_number: Optional[str] = None
+    whatsapp_code: Optional[str] = None
     whatsapp_number: Optional[str] = None
     email: Optional[str] = None
     address: Optional[str] = None
-    gst_number: Optional[str] = None
     notes: Optional[str] = None
 
-    @field_validator('phone_number', 'whatsapp_number')
+    @field_validator('phone_code', 'whatsapp_code')
     @classmethod
-    def format_phone_fields(cls, v: Optional[str]) -> Optional[str]:
+    def validate_phone_code(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
         try:
-            return clean_and_format_phone(v)
+            return clean_phone_code(v)
+        except ValueError as e:
+            raise ValueError(str(e))
+
+    @field_validator('phone_number', 'whatsapp_number')
+    @classmethod
+    def validate_phone_number(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        try:
+            return clean_phone_number(v)
         except ValueError as e:
             raise ValueError(str(e))
 
@@ -78,3 +93,6 @@ class CustomerOut(CustomerBase):
     created_at: datetime
     updated_at: datetime
     created_by: str
+    pending_payment_amount: float = 0.0
+    total_paid_amount: float = 0.0
+    total_visits: int = 0

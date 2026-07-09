@@ -5,6 +5,7 @@ from pydantic import Field
 
 class User(Document):
     full_name: str
+    phone_code: str
     phone_number: str
     salary_monthly: Optional[str] = None
     experience: Optional[str] = None
