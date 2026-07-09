@@ -1,0 +1,6 @@
+{
+    "python.defaultInterpreterPath": "/Users/admin/Documents/flutter_projects/mcc_garage_api/venv/bin/python",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/venv/lib/python3.13/site-packages"
+    ]
+}
