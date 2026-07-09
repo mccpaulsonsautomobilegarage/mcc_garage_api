@@ -1,6 +1,8 @@
+from typing import List
+from beanie import PydanticObjectId
 from fastapi import APIRouter, HTTPException, status, Depends
 from app.features.user.user_models import User
-from app.features.auth.auth_models import Token, UserRegister, UserLogin
+from app.features.auth.auth_models import Token, UserRegister, UserLogin, UserOut
 from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token, get_current_admin
 from app.core.config import settings
 from pymongo.errors import DuplicateKeyError
@@ -73,3 +75,19 @@ async def login(user_data: UserLogin):
         token_type="bearer",
         role=user.role
     )
+
+@router.get("/mechanics", response_model=List[UserOut])
+async def list_mechanics(admin: str = Depends(get_current_admin)):
+    mechanics = await User.find(User.role == "mechanic").to_list()
+    return mechanics
+
+@router.delete("/mechanics/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_mechanic(id: PydanticObjectId, admin: str = Depends(get_current_admin)):
+    mechanic = await User.get(id)
+    if not mechanic or mechanic.role != "mechanic":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Mechanic user not found"
+        )
+    await mechanic.delete()
+    return None

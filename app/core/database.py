@@ -4,6 +4,7 @@ from app.core.config import settings
 
 # We will import the models here later to initialize them with beanie
 from app.features.user.user_models import User
+from app.features.customer.customer_models import Customer
 
 async def init_db():
     client = AsyncIOMotorClient(settings.MONGODB_URL)
@@ -15,5 +16,6 @@ async def init_db():
         database=db,
         document_models=[
             User,
+            Customer,
         ]
     )

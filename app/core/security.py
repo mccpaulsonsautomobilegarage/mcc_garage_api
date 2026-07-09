@@ -51,3 +51,30 @@ def get_current_admin(credentials: HTTPAuthorizationCredentials = Depends(securi
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    from app.features.user.user_models import User
+    
+    token = credentials.credentials
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str = payload.get("sub")
+        role: str = payload.get("role")
+        if username is None or role is None:
+            raise credentials_exception
+    except jwt.JWTError:
+        raise credentials_exception
+
+    if role == "admin":
+        return {"username": username, "role": "admin"}
+        
+    user = await User.find_one(User.username == username)
+    if user is None:
+        raise credentials_exception
+        
+    return {"username": user.username, "role": user.role, "id": str(user.id)}
