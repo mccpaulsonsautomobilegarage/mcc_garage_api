@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.features.user.user_models import User
 from app.features.customer.customer_models import Customer
 from app.features.vehicle.vehicle_models import Vehicle
+from app.features.job_card.job_card_models import JobCard
 
 async def init_db():
     client = AsyncIOMotorClient(settings.MONGODB_URL)
@@ -19,5 +20,6 @@ async def init_db():
             User,
             Customer,
             Vehicle,
+            JobCard,
         ]
     )
