@@ -47,6 +47,37 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone_code: Optional[str] = None
+    phone_number: Optional[str] = None
+    salary_monthly: Optional[str] = None
+    experience: Optional[str] = None
+    specialization: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+
+    @field_validator('phone_code')
+    @classmethod
+    def format_phone_code(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        try:
+            return clean_phone_code(v)
+        except ValueError as e:
+            raise ValueError(str(e))
+
+    @field_validator('phone_number')
+    @classmethod
+    def format_phone_number(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        try:
+            return clean_phone_number(v)
+        except ValueError as e:
+            raise ValueError(str(e))
+
 class UserOut(BaseModel):
     id: PydanticObjectId
     full_name: str
@@ -56,6 +87,7 @@ class UserOut(BaseModel):
     experience: Optional[str] = None
     specialization: Optional[str] = None
     username: str
+    password: Optional[str] = None
     role: str
     is_active: bool
     created_at: datetime

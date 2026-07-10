@@ -12,6 +12,7 @@ class User(Document):
     specialization: Optional[str] = None
     username: str = Field(unique=True)
     password_hash: str
+    password: Optional[str] = None
     role: str = "mechanic"
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)

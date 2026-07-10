@@ -2,7 +2,7 @@ from typing import List
 from beanie import PydanticObjectId
 from fastapi import APIRouter, HTTPException, status, Depends
 from app.features.user.user_models import User
-from app.features.auth.auth_models import Token, UserRegister, UserLogin, UserOut
+from app.features.auth.auth_models import Token, UserRegister, UserLogin, UserOut, UserUpdate
 from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token, get_current_admin
 from app.core.config import settings
 from pymongo.errors import DuplicateKeyError
@@ -28,6 +28,7 @@ async def create_mechanic_user(user_data: UserRegister, admin: str = Depends(get
         specialization=user_data.specialization,
         username=user_data.username,
         password_hash=hashed_password,
+        password=user_data.password,
         role="mechanic"
     )
     
@@ -92,3 +93,40 @@ async def delete_mechanic(id: PydanticObjectId, admin: str = Depends(get_current
         )
     await mechanic.delete()
     return None
+
+@router.put("/mechanics/{id}", response_model=UserOut)
+async def update_mechanic(
+    id: PydanticObjectId,
+    update_data: UserUpdate,
+    admin: str = Depends(get_current_admin)
+):
+    mechanic = await User.get(id)
+    if not mechanic or mechanic.role != "mechanic":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Mechanic user not found"
+        )
+        
+    if update_data.username and update_data.username != mechanic.username:
+        if update_data.username == settings.ADMIN_USERNAME:
+            raise HTTPException(status_code=400, detail="Username already registered")
+        existing_user = await User.find_one(User.username == update_data.username)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Username already registered")
+            
+    if update_data.password:
+        mechanic.password_hash = get_password_hash(update_data.password)
+        mechanic.password = update_data.password
+        
+    update_dict = update_data.model_dump(exclude_unset=True)
+    update_dict.pop("password", None)
+    
+    for key, value in update_dict.items():
+        setattr(mechanic, key, value)
+        
+    try:
+        await mechanic.save()
+    except DuplicateKeyError:
+        raise HTTPException(status_code=400, detail="Username already registered")
+        
+    return mechanic

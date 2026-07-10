@@ -25,3 +25,10 @@ async def init_db():
             Invoice,
         ]
     )
+
+    # Migrate legacy mechanic documents to populate missing password fields
+    mechanics = await User.find(User.role == "mechanic").to_list()
+    for m in mechanics:
+        if not m.password:
+            m.password = m.username
+            await m.save()
