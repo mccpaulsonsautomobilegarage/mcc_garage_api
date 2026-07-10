@@ -57,6 +57,7 @@ async def create_invoice(invoice_data: InvoiceCreate, current_user: dict = Depen
 @router.get("", response_model=List[InvoiceOut])
 async def list_invoices(
     job_card_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by Job Card ID"),
+    vehicle_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by Vehicle ID"),
     payment_status: Optional[PaymentStatus] = Query(default=None, description="Filter by payment status"),
     search: Optional[str] = Query(default=None, description="Search by Invoice Number (case-insensitive)"),
     current_user: dict = Depends(get_current_user)
@@ -64,12 +65,26 @@ async def list_invoices(
     query = {}
     if job_card_id:
         query["job_card_id"] = job_card_id
+    if vehicle_id:
+        job_cards = await JobCard.find(JobCard.vehicle_id == vehicle_id).to_list()
+        if not job_cards:
+            return []
+        query["job_card_id"] = {"$in": [jc.id for jc in job_cards]}
     if payment_status:
         query["payment_status"] = payment_status
     if search:
         query["invoice_no"] = {"$regex": search.strip().upper(), "$options": "i"}
         
     invoices = await Invoice.find(query).to_list()
+    return invoices
+
+@router.get("/vehicle/{vehicle_id}", response_model=List[InvoiceOut])
+async def list_invoices_by_vehicle(vehicle_id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
+    job_cards = await JobCard.find(JobCard.vehicle_id == vehicle_id).to_list()
+    if not job_cards:
+        return []
+    job_card_ids = [jc.id for jc in job_cards]
+    invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).to_list()
     return invoices
 
 @router.get("/{id}", response_model=InvoiceOut)

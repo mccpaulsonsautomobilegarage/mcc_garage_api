@@ -97,6 +97,7 @@ async def create_job_card(job_card_data: JobCardCreate, current_user: dict = Dep
 @router.get("", response_model=List[JobCardOut])
 async def list_job_cards(
     customer_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by customer ID"),
+    vehicle_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by vehicle ID"),
     mechanic_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by assigned mechanic ID"),
     status: Optional[JobStatus] = Query(default=None, description="Filter by job status"),
     search: Optional[str] = Query(default=None, description="Search by Job Number (case-insensitive)"),
@@ -105,6 +106,8 @@ async def list_job_cards(
     query = {}
     if customer_id:
         query["customer_id"] = customer_id
+    if vehicle_id:
+        query["vehicle_id"] = vehicle_id
     if mechanic_id:
         query["mechanic_id"] = mechanic_id
     if status:
@@ -133,6 +136,34 @@ async def list_job_cards(
             **jc.model_dump(),
             mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
             vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
+            customer_name=cust_map.get(jc.customer_id, "Unknown Customer")
+        )
+        for jc in job_cards
+    ]
+
+@router.get("/vehicle/{vehicle_id}", response_model=List[JobCardOut])
+async def list_job_cards_by_vehicle(vehicle_id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
+    job_cards = await JobCard.find(JobCard.vehicle_id == vehicle_id).to_list()
+    if not job_cards:
+        return []
+        
+    cust_ids = list({jc.customer_id for jc in job_cards})
+    mech_ids = list({jc.mechanic_id for jc in job_cards})
+    
+    customers = await Customer.find({"_id": {"$in": cust_ids}}).to_list()
+    mechanics = await User.find({"_id": {"$in": mech_ids}}).to_list()
+    
+    vehicle = await Vehicle.get(vehicle_id)
+    vehicle_number = vehicle.registration_number if vehicle else "Unknown Vehicle"
+    
+    cust_map = {c.id: c.name for c in customers}
+    mech_map = {m.id: m.full_name for m in mechanics}
+    
+    return [
+        JobCardOut(
+            **jc.model_dump(),
+            mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
+            vehicle_number=vehicle_number,
             customer_name=cust_map.get(jc.customer_id, "Unknown Customer")
         )
         for jc in job_cards
