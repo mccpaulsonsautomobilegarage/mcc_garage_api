@@ -73,3 +73,6 @@ class JobCardOut(JobCardBase):
     created_at: datetime
     updated_at: datetime
     created_by: str
+    mechanic_name: Optional[str] = None
+    vehicle_number: str = ""
+    customer_name: str = ""
