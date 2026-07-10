@@ -35,7 +35,6 @@ class VehicleCreate(VehicleBase):
     @field_validator('registration_number')
     @classmethod
     def clean_registration_number(cls, v: str) -> str:
-        # Standardize registration number to uppercase and strip whitespace/hyphens
         cleaned = v.strip().upper().replace(" ", "").replace("-", "")
         if not cleaned:
             raise ValueError("Registration number cannot be empty")
@@ -64,7 +63,7 @@ class VehicleUpdate(BaseModel):
     chassis_number: Optional[str] = None
     engine_number: Optional[str] = None
     insurance_expiry_date: Optional[datetime] = None
-    rc_details: Optional[Annotated[str, StringConstraints(max_length=50)]] = None
+    rc_details: Optional[str] = None
 
     @field_validator('registration_number')
     @classmethod
@@ -91,3 +90,4 @@ class VehicleOut(VehicleBase):
     created_at: datetime
     updated_at: datetime
     created_by: str
+    customer_name: str = ""

@@ -105,6 +105,32 @@ async def list_customers(
         )
     return out_customers
 
+@router.get("/vehicle/{vehicle_id}", response_model=CustomerOut)
+async def get_customer_by_vehicle(
+    vehicle_id: PydanticObjectId,
+    current_user: dict = Depends(get_current_user)
+):
+    from app.features.vehicle.vehicle_models import Vehicle
+    vehicle = await Vehicle.get(vehicle_id)
+    if not vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehicle not found"
+        )
+    customer = await Customer.get(vehicle.customer_id)
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found"
+        )
+    stats = await get_customer_stats(customer.id)
+    return CustomerOut(
+        **customer.model_dump(),
+        pending_payment_amount=stats["pending"],
+        total_paid_amount=stats["paid"],
+        total_visits=stats["visits"]
+    )
+
 @router.get("/{id}", response_model=CustomerOut)
 async def get_customer(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
     customer = await Customer.get(id)

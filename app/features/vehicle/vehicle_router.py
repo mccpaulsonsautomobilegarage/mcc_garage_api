@@ -44,7 +44,10 @@ async def register_vehicle(vehicle_data: VehicleCreate, current_user: dict = Dep
     )
     
     await new_vehicle.insert()
-    return new_vehicle
+    return VehicleOut(
+        **new_vehicle.model_dump(),
+        customer_name=customer.name
+    )
 
 @router.get("", response_model=List[VehicleOut])
 async def list_vehicles(
@@ -61,7 +64,20 @@ async def list_vehicles(
         query["registration_number"] = {"$regex": cleaned_search, "$options": "i"}
         
     vehicles = await Vehicle.find(query).to_list()
-    return vehicles
+    if not vehicles:
+        return []
+        
+    customer_ids = list({v.customer_id for v in vehicles})
+    customers = await Customer.find({"_id": {"$in": customer_ids}}).to_list()
+    customer_map = {c.id: c.name for c in customers}
+    
+    return [
+        VehicleOut(
+            **v.model_dump(),
+            customer_name=customer_map.get(v.customer_id, "Unknown Customer")
+        )
+        for v in vehicles
+    ]
 
 @router.get("/{id}", response_model=VehicleOut)
 async def get_vehicle(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
@@ -71,7 +87,12 @@ async def get_vehicle(id: PydanticObjectId, current_user: dict = Depends(get_cur
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Vehicle not found"
         )
-    return vehicle
+    customer = await Customer.get(vehicle.customer_id)
+    customer_name = customer.name if customer else "Unknown Customer"
+    return VehicleOut(
+        **vehicle.model_dump(),
+        customer_name=customer_name
+    )
 
 @router.put("/{id}", response_model=VehicleOut)
 async def update_vehicle(
@@ -110,7 +131,12 @@ async def update_vehicle(
         
     vehicle.updated_at = datetime.utcnow()
     await vehicle.save()
-    return vehicle
+    customer = await Customer.get(vehicle.customer_id)
+    customer_name = customer.name if customer else "Unknown Customer"
+    return VehicleOut(
+        **vehicle.model_dump(),
+        customer_name=customer_name
+    )
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_vehicle(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
