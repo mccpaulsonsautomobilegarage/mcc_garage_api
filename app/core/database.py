@@ -4,6 +4,11 @@ from app.core.config import settings
 
 # We will import the models here later to initialize them with beanie
 from app.features.user.user_models import User
+from app.features.customer.customer_models import Customer
+from app.features.vehicle.vehicle_models import Vehicle
+from app.features.job_card.job_card_models import JobCard
+from app.features.invoice.invoice_models import Invoice
+from app.features.expense.expense_models import Expense
 
 async def init_db():
     client = AsyncIOMotorClient(settings.MONGODB_URL)
@@ -15,5 +20,17 @@ async def init_db():
         database=db,
         document_models=[
             User,
+            Customer,
+            Vehicle,
+            JobCard,
+            Invoice,
+            Expense,
         ]
     )
+
+    # Migrate legacy mechanic documents to populate missing password fields
+    mechanics = await User.find(User.role == "mechanic").to_list()
+    for m in mechanics:
+        if not m.password:
+            m.password = m.username
+            await m.save()
