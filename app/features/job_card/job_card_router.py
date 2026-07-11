@@ -195,15 +195,26 @@ async def list_job_cards_by_customer(customer_id: PydanticObjectId, current_user
     ]
 
 @router.get("/today", response_model=List[JobCardOut])
-async def list_todays_job_cards(current_user: dict = Depends(get_current_user)):
-    # Find all job cards created today (UTC day)
+async def list_todays_job_cards(
+    start_date: Optional[datetime] = Query(default=None),
+    end_date: Optional[datetime] = Query(default=None),
+    current_user: dict = Depends(get_current_user)
+):
     now = datetime.utcnow()
-    start_of_today = datetime(now.year, now.month, now.day, 0, 0, 0)
-    end_of_today = datetime(now.year, now.month, now.day, 23, 59, 59)
+    
+    if start_date:
+        start_dt = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)
+    else:
+        start_dt = datetime(now.year, now.month, now.day, 0, 0, 0)
+        
+    if end_date:
+        end_dt = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59)
+    else:
+        end_dt = datetime(now.year, now.month, now.day, 23, 59, 59)
     
     job_cards = await JobCard.find(
-        JobCard.created_at >= start_of_today,
-        JobCard.created_at <= end_of_today
+        JobCard.created_at >= start_dt,
+        JobCard.created_at <= end_dt
     ).to_list()
     
     if not job_cards:
