@@ -128,9 +128,9 @@ async def update_invoice(
                 detail="The linked Job Card does not exist"
             )
             
-    update_dict = invoice_data.model_dump(exclude_unset=True)
-    for key, value in update_dict.items():
-        setattr(invoice, key, value)
+    for field in invoice_data.model_fields_set:
+        value = getattr(invoice_data, field)
+        setattr(invoice, field, value)
         
     # Recalculate totals after updating values
     invoice.calculate_totals()
