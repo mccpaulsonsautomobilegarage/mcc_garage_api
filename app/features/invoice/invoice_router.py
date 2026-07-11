@@ -5,8 +5,62 @@ from app.features.invoice.invoice_models import Invoice, InvoiceCreate, InvoiceU
 from app.features.job_card.job_card_models import JobCard
 from app.core.security import get_current_user
 from datetime import datetime
+from app.features.customer.customer_models import Customer
+from app.features.vehicle.vehicle_models import Vehicle
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
+
+async def populate_invoice_details(invoice: Invoice) -> InvoiceOut:
+    job_card = await JobCard.get(invoice.job_card_id)
+    if not job_card:
+        return InvoiceOut(**invoice.model_dump())
+        
+    customer = await Customer.get(job_card.customer_id)
+    vehicle = await Vehicle.get(job_card.vehicle_id)
+    
+    return InvoiceOut(
+        **invoice.model_dump(),
+        customer_name=customer.name if customer else "Unknown Customer",
+        customer_mobile_number=f"{customer.phone_code} {customer.phone_number}".strip() if customer else "",
+        registration_number=vehicle.registration_number if vehicle else "Unknown Vehicle",
+        brand_make=vehicle.brand_make if vehicle else "Unknown Brand",
+        model=vehicle.model if (vehicle and vehicle.model) else ""
+    )
+
+async def populate_invoices_list(invoices: List[Invoice]) -> List[InvoiceOut]:
+    if not invoices:
+        return []
+        
+    job_card_ids = list({inv.job_card_id for inv in invoices})
+    job_cards = await JobCard.find({"_id": {"$in": job_card_ids}}).to_list()
+    job_card_map = {jc.id: jc for jc in job_cards}
+    
+    customer_ids = list({jc.customer_id for jc in job_cards})
+    vehicle_ids = list({jc.vehicle_id for jc in job_cards})
+    
+    customers = await Customer.find({"_id": {"$in": customer_ids}}).to_list()
+    vehicles = await Vehicle.find({"_id": {"$in": vehicle_ids}}).to_list()
+    
+    customer_map = {c.id: c for c in customers}
+    vehicle_map = {v.id: v for v in vehicles}
+    
+    results = []
+    for inv in invoices:
+        jc = job_card_map.get(inv.job_card_id)
+        cust = customer_map.get(jc.customer_id) if jc else None
+        veh = vehicle_map.get(jc.vehicle_id) if jc else None
+        
+        results.append(
+            InvoiceOut(
+                **inv.model_dump(),
+                customer_name=cust.name if cust else "Unknown Customer",
+                customer_mobile_number=f"{cust.phone_code} {cust.phone_number}".strip() if cust else "",
+                registration_number=veh.registration_number if veh else "Unknown Vehicle",
+                brand_make=veh.brand_make if veh else "Unknown Brand",
+                model=veh.model if (veh and veh.model) else ""
+            )
+        )
+    return results
 
 async def generate_next_invoice_no() -> str:
     # Find the latest registered invoice sorted by creation time
@@ -52,7 +106,7 @@ async def create_invoice(invoice_data: InvoiceCreate, current_user: dict = Depen
     new_invoice.calculate_totals()
     
     await new_invoice.insert()
-    return new_invoice
+    return await populate_invoice_details(new_invoice)
 
 @router.get("", response_model=List[InvoiceOut])
 async def list_invoices(
@@ -76,7 +130,7 @@ async def list_invoices(
         query["invoice_no"] = {"$regex": search.strip().upper(), "$options": "i"}
         
     invoices = await Invoice.find(query).to_list()
-    return invoices
+    return await populate_invoices_list(invoices)
 
 @router.get("/vehicle/{vehicle_id}", response_model=List[InvoiceOut])
 async def list_invoices_by_vehicle(vehicle_id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
@@ -85,7 +139,7 @@ async def list_invoices_by_vehicle(vehicle_id: PydanticObjectId, current_user: d
         return []
     job_card_ids = [jc.id for jc in job_cards]
     invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).to_list()
-    return invoices
+    return await populate_invoices_list(invoices)
 
 @router.get("/customer/{customer_id}", response_model=List[InvoiceOut])
 async def list_invoices_by_customer(customer_id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
@@ -94,7 +148,7 @@ async def list_invoices_by_customer(customer_id: PydanticObjectId, current_user:
         return []
     job_card_ids = [jc.id for jc in job_cards]
     invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).to_list()
-    return invoices
+    return await populate_invoices_list(invoices)
 
 @router.get("/{id}", response_model=InvoiceOut)
 async def get_invoice(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
@@ -104,7 +158,7 @@ async def get_invoice(id: PydanticObjectId, current_user: dict = Depends(get_cur
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invoice not found"
         )
-    return invoice
+    return await populate_invoice_details(invoice)
 
 @router.put("/{id}", response_model=InvoiceOut)
 async def update_invoice(
@@ -137,7 +191,7 @@ async def update_invoice(
     
     invoice.updated_at = datetime.utcnow()
     await invoice.save()
-    return invoice
+    return await populate_invoice_details(invoice)
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_invoice(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
