@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
 from beanie import PydanticObjectId
 from app.features.customer.customer_models import Customer, CustomerCreate, CustomerUpdate, CustomerOut
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin
 from datetime import datetime
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
@@ -191,7 +191,7 @@ async def update_customer(
     )
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_customer(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
+async def delete_customer(id: PydanticObjectId, admin: str = Depends(get_current_admin)):
     customer = await Customer.get(id)
     if not customer:
         raise HTTPException(

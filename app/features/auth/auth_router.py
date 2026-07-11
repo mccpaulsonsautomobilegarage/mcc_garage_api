@@ -3,7 +3,7 @@ from beanie import PydanticObjectId
 from fastapi import APIRouter, HTTPException, status, Depends
 from app.features.user.user_models import User
 from app.features.auth.auth_models import Token, UserRegister, UserLogin, UserOut, UserUpdate
-from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token, get_current_admin
+from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token, get_current_admin, get_current_user
 from app.core.config import settings
 from pymongo.errors import DuplicateKeyError
 
@@ -79,7 +79,7 @@ async def login(user_data: UserLogin):
     )
 
 @router.get("/mechanics", response_model=List[UserOut])
-async def list_mechanics(admin: str = Depends(get_current_admin)):
+async def list_mechanics(current_user: dict = Depends(get_current_user)):
     mechanics = await User.find(User.role == "mechanic").to_list()
     return mechanics
 

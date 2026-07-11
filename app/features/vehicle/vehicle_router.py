@@ -3,7 +3,7 @@ from typing import List, Optional
 from beanie import PydanticObjectId
 from app.features.vehicle.vehicle_models import Vehicle, VehicleCreate, VehicleUpdate, VehicleOut
 from app.features.customer.customer_models import Customer
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin
 from datetime import datetime
 
 router = APIRouter(prefix="/vehicles", tags=["Vehicles"])
@@ -139,7 +139,7 @@ async def update_vehicle(
     )
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_vehicle(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
+async def delete_vehicle(id: PydanticObjectId, admin: str = Depends(get_current_admin)):
     vehicle = await Vehicle.get(id)
     if not vehicle:
         raise HTTPException(
