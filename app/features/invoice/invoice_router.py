@@ -87,6 +87,15 @@ async def list_invoices_by_vehicle(vehicle_id: PydanticObjectId, current_user: d
     invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).to_list()
     return invoices
 
+@router.get("/customer/{customer_id}", response_model=List[InvoiceOut])
+async def list_invoices_by_customer(customer_id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
+    job_cards = await JobCard.find(JobCard.customer_id == customer_id).to_list()
+    if not job_cards:
+        return []
+    job_card_ids = [jc.id for jc in job_cards]
+    invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).to_list()
+    return invoices
+
 @router.get("/{id}", response_model=InvoiceOut)
 async def get_invoice(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
     invoice = await Invoice.get(id)
