@@ -23,6 +23,8 @@ async def create_expense(expense_data: ExpenseCreate, current_user: dict = Depen
 async def list_expenses(
     category: Optional[str] = Query(default=None, description="Filter by category"),
     search: Optional[str] = Query(default=None, description="Search by description"),
+    start_date: Optional[datetime] = Query(default=None, description="Start date filter"),
+    end_date: Optional[datetime] = Query(default=None, description="End date filter"),
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
@@ -30,6 +32,14 @@ async def list_expenses(
         query["category"] = category
     if search:
         query["description"] = {"$regex": search, "$options": "i"}
+
+    if start_date or end_date:
+        date_query = {}
+        if start_date:
+            date_query["$gte"] = start_date
+        if end_date:
+            date_query["$lte"] = end_date
+        query["date"] = date_query
 
     expenses = await Expense.find(query).sort("-date").to_list()
     return expenses
