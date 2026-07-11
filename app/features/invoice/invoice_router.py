@@ -20,6 +20,7 @@ async def populate_invoice_details(invoice: Invoice) -> InvoiceOut:
     
     return InvoiceOut(
         **invoice.model_dump(),
+        job_no=job_card.job_no,
         customer_name=customer.name if customer else "Unknown Customer",
         customer_mobile_number=f"{customer.phone_code} {customer.phone_number}".strip() if customer else "",
         registration_number=vehicle.registration_number if vehicle else "Unknown Vehicle",
@@ -53,6 +54,7 @@ async def populate_invoices_list(invoices: List[Invoice]) -> List[InvoiceOut]:
         results.append(
             InvoiceOut(
                 **inv.model_dump(),
+                job_no=jc.job_no if jc else "",
                 customer_name=cust.name if cust else "Unknown Customer",
                 customer_mobile_number=f"{cust.phone_code} {cust.phone_number}".strip() if cust else "",
                 registration_number=veh.registration_number if veh else "Unknown Vehicle",

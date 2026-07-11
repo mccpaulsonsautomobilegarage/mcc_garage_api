@@ -77,6 +77,7 @@ class InvoiceOut(InvoiceBase):
     created_at: datetime
     updated_at: datetime
     created_by: str
+    job_no: str = ""
     customer_name: str = ""
     customer_mobile_number: str = ""
     registration_number: str = ""
