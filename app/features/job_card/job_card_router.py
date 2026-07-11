@@ -8,7 +8,53 @@ from app.features.user.user_models import User
 from app.core.security import get_current_user
 from datetime import datetime, time
 
+from app.features.invoice.invoice_models import Invoice
+
 router = APIRouter(prefix="/job-cards", tags=["Job Cards"])
+
+async def populate_job_card_details(job_card: JobCard) -> JobCardOut:
+    customer = await Customer.get(job_card.customer_id)
+    vehicle = await Vehicle.get(job_card.vehicle_id)
+    mechanic = await User.get(job_card.mechanic_id)
+    invoice = await Invoice.find_one(Invoice.job_card_id == job_card.id)
+    
+    return JobCardOut(
+        **job_card.model_dump(),
+        mechanic_name=mechanic.full_name if mechanic else "Unknown Mechanic",
+        vehicle_number=vehicle.registration_number if vehicle else "Unknown Vehicle",
+        customer_name=customer.name if customer else "Unknown Customer",
+        payment_status=invoice.payment_status if invoice else "Unpaid"
+    )
+
+async def populate_job_cards_list(job_cards: List[JobCard]) -> List[JobCardOut]:
+    if not job_cards:
+        return []
+        
+    cust_ids = list({jc.customer_id for jc in job_cards})
+    veh_ids = list({jc.vehicle_id for jc in job_cards})
+    mech_ids = list({jc.mechanic_id for jc in job_cards})
+    job_card_ids = [jc.id for jc in job_cards]
+    
+    customers = await Customer.find({"_id": {"$in": cust_ids}}).to_list()
+    vehicles = await Vehicle.find({"_id": {"$in": veh_ids}}).to_list()
+    mechanics = await User.find({"_id": {"$in": mech_ids}}).to_list()
+    invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).to_list()
+    
+    cust_map = {c.id: c.name for c in customers}
+    veh_map = {v.id: v.registration_number for v in vehicles}
+    mech_map = {m.id: m.full_name for m in mechanics}
+    invoice_map = {inv.job_card_id: inv.payment_status for inv in invoices}
+    
+    return [
+        JobCardOut(
+            **jc.model_dump(),
+            mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
+            vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
+            customer_name=cust_map.get(jc.customer_id, "Unknown Customer"),
+            payment_status=invoice_map.get(jc.id, "Unpaid")
+        )
+        for jc in job_cards
+    ]
 
 async def generate_next_job_no() -> str:
     now = datetime.utcnow()
@@ -84,12 +130,7 @@ async def create_job_card(job_card_data: JobCardCreate, current_user: dict = Dep
     )
     
     await new_job_card.insert()
-    return JobCardOut(
-        **new_job_card.model_dump(),
-        mechanic_name=mechanic.full_name,
-        vehicle_number=vehicle.registration_number,
-        customer_name=customer.name
-    )
+    return await populate_job_card_details(new_job_card)
 
 @router.get("", response_model=List[JobCardOut])
 async def list_job_cards(
@@ -113,86 +154,17 @@ async def list_job_cards(
         query["job_no"] = {"$regex": search.strip().upper(), "$options": "i"}
         
     job_cards = await JobCard.find(query).to_list()
-    if not job_cards:
-        return []
-        
-    cust_ids = list({jc.customer_id for jc in job_cards})
-    veh_ids = list({jc.vehicle_id for jc in job_cards})
-    mech_ids = list({jc.mechanic_id for jc in job_cards})
-    
-    customers = await Customer.find({"_id": {"$in": cust_ids}}).to_list()
-    vehicles = await Vehicle.find({"_id": {"$in": veh_ids}}).to_list()
-    mechanics = await User.find({"_id": {"$in": mech_ids}}).to_list()
-    
-    cust_map = {c.id: c.name for c in customers}
-    veh_map = {v.id: v.registration_number for v in vehicles}
-    mech_map = {m.id: m.full_name for m in mechanics}
-    
-    return [
-        JobCardOut(
-            **jc.model_dump(),
-            mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
-            vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
-            customer_name=cust_map.get(jc.customer_id, "Unknown Customer")
-        )
-        for jc in job_cards
-    ]
+    return await populate_job_cards_list(job_cards)
 
 @router.get("/vehicle/{vehicle_id}", response_model=List[JobCardOut])
 async def list_job_cards_by_vehicle(vehicle_id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
     job_cards = await JobCard.find(JobCard.vehicle_id == vehicle_id).to_list()
-    if not job_cards:
-        return []
-        
-    cust_ids = list({jc.customer_id for jc in job_cards})
-    mech_ids = list({jc.mechanic_id for jc in job_cards})
-    
-    customers = await Customer.find({"_id": {"$in": cust_ids}}).to_list()
-    mechanics = await User.find({"_id": {"$in": mech_ids}}).to_list()
-    
-    vehicle = await Vehicle.get(vehicle_id)
-    vehicle_number = vehicle.registration_number if vehicle else "Unknown Vehicle"
-    
-    cust_map = {c.id: c.name for c in customers}
-    mech_map = {m.id: m.full_name for m in mechanics}
-    
-    return [
-        JobCardOut(
-            **jc.model_dump(),
-            mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
-            vehicle_number=vehicle_number,
-            customer_name=cust_map.get(jc.customer_id, "Unknown Customer")
-        )
-        for jc in job_cards
-    ]
+    return await populate_job_cards_list(job_cards)
 
 @router.get("/customer/{customer_id}", response_model=List[JobCardOut])
 async def list_job_cards_by_customer(customer_id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
     job_cards = await JobCard.find(JobCard.customer_id == customer_id).to_list()
-    if not job_cards:
-        return []
-        
-    cust_ids = list({jc.customer_id for jc in job_cards})
-    veh_ids = list({jc.vehicle_id for jc in job_cards})
-    mech_ids = list({jc.mechanic_id for jc in job_cards})
-    
-    customers = await Customer.find({"_id": {"$in": cust_ids}}).to_list()
-    vehicles = await Vehicle.find({"_id": {"$in": veh_ids}}).to_list()
-    mechanics = await User.find({"_id": {"$in": mech_ids}}).to_list()
-    
-    cust_map = {c.id: c.name for c in customers}
-    veh_map = {v.id: v.registration_number for v in vehicles}
-    mech_map = {m.id: m.full_name for m in mechanics}
-    
-    return [
-        JobCardOut(
-            **jc.model_dump(),
-            mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
-            vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
-            customer_name=cust_map.get(jc.customer_id, "Unknown Customer")
-        )
-        for jc in job_cards
-    ]
+    return await populate_job_cards_list(job_cards)
 
 @router.get("/today", response_model=List[JobCardOut])
 async def list_todays_job_cards(
@@ -216,31 +188,7 @@ async def list_todays_job_cards(
         JobCard.created_at >= start_dt,
         JobCard.created_at <= end_dt
     ).to_list()
-    
-    if not job_cards:
-        return []
-        
-    cust_ids = list({jc.customer_id for jc in job_cards})
-    veh_ids = list({jc.vehicle_id for jc in job_cards})
-    mech_ids = list({jc.mechanic_id for jc in job_cards})
-    
-    customers = await Customer.find({"_id": {"$in": cust_ids}}).to_list()
-    vehicles = await Vehicle.find({"_id": {"$in": veh_ids}}).to_list()
-    mechanics = await User.find({"_id": {"$in": mech_ids}}).to_list()
-    
-    cust_map = {c.id: c.name for c in customers}
-    veh_map = {v.id: v.registration_number for v in vehicles}
-    mech_map = {m.id: m.full_name for m in mechanics}
-    
-    return [
-        JobCardOut(
-            **jc.model_dump(),
-            mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
-            vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
-            customer_name=cust_map.get(jc.customer_id, "Unknown Customer")
-        )
-        for jc in job_cards
-    ]
+    return await populate_job_cards_list(job_cards)
 
 @router.get("/{id}", response_model=JobCardOut)
 async def get_job_card(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
@@ -250,16 +198,7 @@ async def get_job_card(id: PydanticObjectId, current_user: dict = Depends(get_cu
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Job card not found"
         )
-    customer = await Customer.get(job_card.customer_id)
-    vehicle = await Vehicle.get(job_card.vehicle_id)
-    mechanic = await User.get(job_card.mechanic_id)
-    
-    return JobCardOut(
-        **job_card.model_dump(),
-        mechanic_name=mechanic.full_name if mechanic else "Unknown Mechanic",
-        vehicle_number=vehicle.registration_number if vehicle else "Unknown Vehicle",
-        customer_name=customer.name if customer else "Unknown Customer"
-    )
+    return await populate_job_card_details(job_card)
 
 @router.put("/{id}", response_model=JobCardOut)
 async def update_job_card(
@@ -319,16 +258,7 @@ async def update_job_card(
     job_card.updated_at = datetime.utcnow()
     await job_card.save()
     
-    customer = await Customer.get(job_card.customer_id)
-    vehicle = await Vehicle.get(job_card.vehicle_id)
-    mechanic = await User.get(job_card.mechanic_id)
-    
-    return JobCardOut(
-        **job_card.model_dump(),
-        mechanic_name=mechanic.full_name if mechanic else "Unknown Mechanic",
-        vehicle_number=vehicle.registration_number if vehicle else "Unknown Vehicle",
-        customer_name=customer.name if customer else "Unknown Customer"
-    )
+    return await populate_job_card_details(job_card)
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_job_card(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):

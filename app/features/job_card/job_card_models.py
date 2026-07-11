@@ -76,3 +76,4 @@ class JobCardOut(JobCardBase):
     mechanic_name: Optional[str] = None
     vehicle_number: str = ""
     customer_name: str = ""
+    payment_status: str = "Unpaid"
