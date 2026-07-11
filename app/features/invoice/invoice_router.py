@@ -4,7 +4,7 @@ from beanie import PydanticObjectId
 from app.features.invoice.invoice_models import Invoice, InvoiceCreate, InvoiceUpdate, InvoiceOut, PaymentStatus
 from app.features.job_card.job_card_models import JobCard
 from app.core.security import get_current_user
-from datetime import datetime
+from datetime import datetime, time
 from app.features.customer.customer_models import Customer
 from app.features.vehicle.vehicle_models import Vehicle
 
@@ -65,21 +65,19 @@ async def populate_invoices_list(invoices: List[Invoice]) -> List[InvoiceOut]:
     return results
 
 async def generate_next_invoice_no() -> str:
-    # Find the latest registered invoice sorted by creation time
-    last_invoices = await Invoice.find_all().sort("-created_at").limit(1).to_list()
-    if not last_invoices:
-        return "INV-2401"
+    now = datetime.utcnow()
+    day_start = datetime.combine(now.date(), time.min)
+    day_end = datetime.combine(now.date(), time.max)
     
-    last_invoice_no = last_invoices[0].invoice_no
-    try:
-        parts = last_invoice_no.split("-")
-        if len(parts) == 2:
-            num = int(parts[1])
-            return f"INV-{num + 1}"
-    except (ValueError, IndexError):
-        pass
+    count = await Invoice.find(Invoice.created_at >= day_start, Invoice.created_at <= day_end).count()
     
-    return "INV-2401"
+    while True:
+        next_val = count + 1
+        invoice_no = f"{next_val:02d}{now.day:02d}{now.month:02d}{now.year % 100:02d}"
+        existing = await Invoice.find_one(Invoice.invoice_no == invoice_no)
+        if not existing:
+            return invoice_no
+        count += 1
 
 @router.post("", response_model=InvoiceOut, status_code=status.HTTP_201_CREATED)
 async def create_invoice(invoice_data: InvoiceCreate, current_user: dict = Depends(get_current_user)):

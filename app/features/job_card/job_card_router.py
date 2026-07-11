@@ -6,27 +6,24 @@ from app.features.customer.customer_models import Customer
 from app.features.vehicle.vehicle_models import Vehicle
 from app.features.user.user_models import User
 from app.core.security import get_current_user
-from datetime import datetime
+from datetime import datetime, time
 
 router = APIRouter(prefix="/job-cards", tags=["Job Cards"])
 
 async def generate_next_job_no() -> str:
-    # Find the latest registered job card sorted by creation time
-    last_jobs = await JobCard.find_all().sort("-created_at").limit(1).to_list()
-    if not last_jobs:
-        return "JOB-2401"
+    now = datetime.utcnow()
+    day_start = datetime.combine(now.date(), time.min)
+    day_end = datetime.combine(now.date(), time.max)
     
-    last_job_no = last_jobs[0].job_no
-    try:
-        parts = last_job_no.split("-")
-        if len(parts) == 2:
-            num = int(parts[1])
-            return f"JOB-{num + 1}"
-    except (ValueError, IndexError):
-        pass
+    count = await JobCard.find(JobCard.created_at >= day_start, JobCard.created_at <= day_end).count()
     
-    # Fallback default
-    return "JOB-2401"
+    while True:
+        next_val = count + 1
+        job_no = f"{next_val:02d}{now.day:02d}{now.month:02d}{now.year % 100:02d}"
+        existing = await JobCard.find_one(JobCard.job_no == job_no)
+        if not existing:
+            return job_no
+        count += 1
 
 @router.post("", response_model=JobCardOut, status_code=status.HTTP_201_CREATED)
 async def create_job_card(job_card_data: JobCardCreate, current_user: dict = Depends(get_current_user)):
