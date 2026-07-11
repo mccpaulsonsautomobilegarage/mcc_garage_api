@@ -4,7 +4,7 @@ from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field
 
 class ExpenseBase(BaseModel):
-    description: str = Field(..., min_length=1, description="Description of the expense")
+    description: Optional[str] = Field(default=None, description="Description of the expense")
     category: str = Field(..., min_length=1, description="Category of the expense")
     amount: float = Field(..., gt=0.0, description="Amount spent")
     date: datetime = Field(..., description="Date of the expense in ISO8601")
