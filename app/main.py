@@ -7,6 +7,7 @@ from app.features.vehicle.vehicle_router import router as vehicle_router
 from app.features.job_card.job_card_router import router as job_card_router
 from app.features.invoice.invoice_router import router as invoice_router
 from app.features.expense.expense_router import router as expense_router
+from app.features.dashboard.dashboard_router import router as dashboard_router
 
 from contextlib import asynccontextmanager
 
@@ -34,6 +35,7 @@ app.include_router(vehicle_router)
 app.include_router(job_card_router)
 app.include_router(invoice_router)
 app.include_router(expense_router)
+app.include_router(dashboard_router)
 
 @app.get("/")
 async def root():

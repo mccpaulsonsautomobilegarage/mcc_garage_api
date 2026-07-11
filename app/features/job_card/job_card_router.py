@@ -197,6 +197,43 @@ async def list_job_cards_by_customer(customer_id: PydanticObjectId, current_user
         for jc in job_cards
     ]
 
+@router.get("/today", response_model=List[JobCardOut])
+async def list_todays_job_cards(current_user: dict = Depends(get_current_user)):
+    # Find all job cards created today (UTC day)
+    now = datetime.utcnow()
+    start_of_today = datetime(now.year, now.month, now.day, 0, 0, 0)
+    end_of_today = datetime(now.year, now.month, now.day, 23, 59, 59)
+    
+    job_cards = await JobCard.find(
+        JobCard.created_at >= start_of_today,
+        JobCard.created_at <= end_of_today
+    ).to_list()
+    
+    if not job_cards:
+        return []
+        
+    cust_ids = list({jc.customer_id for jc in job_cards})
+    veh_ids = list({jc.vehicle_id for jc in job_cards})
+    mech_ids = list({jc.mechanic_id for jc in job_cards})
+    
+    customers = await Customer.find({"_id": {"$in": cust_ids}}).to_list()
+    vehicles = await Vehicle.find({"_id": {"$in": veh_ids}}).to_list()
+    mechanics = await User.find({"_id": {"$in": mech_ids}}).to_list()
+    
+    cust_map = {c.id: c.name for c in customers}
+    veh_map = {v.id: v.registration_number for v in vehicles}
+    mech_map = {m.id: m.full_name for m in mechanics}
+    
+    return [
+        JobCardOut(
+            **jc.model_dump(),
+            mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
+            vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
+            customer_name=cust_map.get(jc.customer_id, "Unknown Customer")
+        )
+        for jc in job_cards
+    ]
+
 @router.get("/{id}", response_model=JobCardOut)
 async def get_job_card(id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
     job_card = await JobCard.get(id)
