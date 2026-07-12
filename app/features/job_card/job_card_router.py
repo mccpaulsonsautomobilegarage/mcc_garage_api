@@ -23,7 +23,9 @@ async def populate_job_card_details(job_card: JobCard) -> JobCardOut:
         mechanic_name=mechanic.full_name if mechanic else "Unknown Mechanic",
         vehicle_number=vehicle.registration_number if vehicle else "Unknown Vehicle",
         customer_name=customer.name if customer else "Unknown Customer",
-        payment_status=invoice.payment_status if invoice else "Unpaid"
+        payment_status=invoice.payment_status if invoice else "Unpaid",
+        is_invoice_created=invoice is not None,
+        invoice_id=str(invoice.id) if invoice else None
     )
 
 async def populate_job_cards_list(job_cards: List[JobCard]) -> List[JobCardOut]:
@@ -43,7 +45,7 @@ async def populate_job_cards_list(job_cards: List[JobCard]) -> List[JobCardOut]:
     cust_map = {c.id: c.name for c in customers}
     veh_map = {v.id: v.registration_number for v in vehicles}
     mech_map = {m.id: m.full_name for m in mechanics}
-    invoice_map = {inv.job_card_id: inv.payment_status for inv in invoices}
+    invoice_map = {inv.job_card_id: inv for inv in invoices}
     
     return [
         JobCardOut(
@@ -51,7 +53,9 @@ async def populate_job_cards_list(job_cards: List[JobCard]) -> List[JobCardOut]:
             mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
             vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
             customer_name=cust_map.get(jc.customer_id, "Unknown Customer"),
-            payment_status=invoice_map.get(jc.id, "Unpaid")
+            payment_status=invoice_map[jc.id].payment_status if jc.id in invoice_map else "Unpaid",
+            is_invoice_created=jc.id in invoice_map,
+            invoice_id=str(invoice_map[jc.id].id) if jc.id in invoice_map else None
         )
         for jc in job_cards
     ]
@@ -153,17 +157,17 @@ async def list_job_cards(
     if search:
         query["job_no"] = {"$regex": search.strip().upper(), "$options": "i"}
         
-    job_cards = await JobCard.find(query).to_list()
+    job_cards = await JobCard.find(query).sort("-created_at").to_list()
     return await populate_job_cards_list(job_cards)
 
 @router.get("/vehicle/{vehicle_id}", response_model=List[JobCardOut])
 async def list_job_cards_by_vehicle(vehicle_id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
-    job_cards = await JobCard.find(JobCard.vehicle_id == vehicle_id).to_list()
+    job_cards = await JobCard.find(JobCard.vehicle_id == vehicle_id).sort("-created_at").to_list()
     return await populate_job_cards_list(job_cards)
 
 @router.get("/customer/{customer_id}", response_model=List[JobCardOut])
 async def list_job_cards_by_customer(customer_id: PydanticObjectId, current_user: dict = Depends(get_current_user)):
-    job_cards = await JobCard.find(JobCard.customer_id == customer_id).to_list()
+    job_cards = await JobCard.find(JobCard.customer_id == customer_id).sort("-created_at").to_list()
     return await populate_job_cards_list(job_cards)
 
 @router.get("/today", response_model=List[JobCardOut])
@@ -187,7 +191,7 @@ async def list_todays_job_cards(
     job_cards = await JobCard.find(
         JobCard.created_at >= start_dt,
         JobCard.created_at <= end_dt
-    ).to_list()
+    ).sort("-created_at").to_list()
     return await populate_job_cards_list(job_cards)
 
 @router.get("/{id}", response_model=JobCardOut)

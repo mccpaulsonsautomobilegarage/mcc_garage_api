@@ -77,3 +77,5 @@ class JobCardOut(JobCardBase):
     vehicle_number: str = ""
     customer_name: str = ""
     payment_status: str = "Unpaid"
+    is_invoice_created: bool = False
+    invoice_id: Optional[str] = None
