@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from app.core.datetime_utils import get_current_time
 
 FuelLevel = Literal["Empty", "Quarter", "Half", "Full"]
-JobStatus = Literal["In Progress", "Completed", "Pending Delivery", "Pending Payment"]
+JobStatus = Literal["In Progress", "Delivered", "Pending Delivery"]
 
 class JobCardBase(BaseModel):
     customer_id: PydanticObjectId = Field(..., description="Linked customer account ID")

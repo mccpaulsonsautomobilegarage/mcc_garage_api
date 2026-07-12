@@ -34,7 +34,7 @@ async def get_dashboard_stats(
     
     total_vehicles_today = len(job_cards)
     vehicles_in_progress = sum(1 for jc in job_cards if jc.status == "In Progress")
-    vehicles_completed = sum(1 for jc in job_cards if jc.status == "Completed")
+    vehicles_completed = sum(1 for jc in job_cards if jc.status == "Delivered")
     pending_delivery = sum(1 for jc in job_cards if jc.status == "Pending Delivery")
     
     # 2. Revenue in selected range (sum of paid_amount of invoices created in range)
