@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from beanie import Document
 from pydantic import Field
+from app.core.datetime_utils import get_current_time
 
 class User(Document):
     full_name: str
@@ -15,7 +16,7 @@ class User(Document):
     password: Optional[str] = None
     role: str = "mechanic"
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_current_time)
 
     class Settings:
         name = "users"

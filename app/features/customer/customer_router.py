@@ -4,6 +4,7 @@ from beanie import PydanticObjectId
 from app.features.customer.customer_models import Customer, CustomerCreate, CustomerUpdate, CustomerOut
 from app.core.security import get_current_user, get_current_admin
 from datetime import datetime
+from app.core.datetime_utils import get_current_time
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
 
@@ -179,7 +180,7 @@ async def update_customer(
     for key, value in update_dict.items():
         setattr(customer, key, value)
         
-    customer.updated_at = datetime.utcnow()
+    customer.updated_at = get_current_time()
     await customer.save()
     
     stats = await get_customer_stats(customer.id)

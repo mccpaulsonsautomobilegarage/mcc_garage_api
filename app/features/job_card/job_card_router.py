@@ -7,6 +7,7 @@ from app.features.vehicle.vehicle_models import Vehicle
 from app.features.user.user_models import User
 from app.core.security import get_current_user
 from datetime import datetime, time
+from app.core.datetime_utils import get_current_time
 
 from app.features.invoice.invoice_models import Invoice
 
@@ -61,7 +62,7 @@ async def populate_job_cards_list(job_cards: List[JobCard]) -> List[JobCardOut]:
     ]
 
 async def generate_next_job_no() -> str:
-    now = datetime.utcnow()
+    now = get_current_time()
     day_start = datetime.combine(now.date(), time.min)
     day_end = datetime.combine(now.date(), time.max)
     
@@ -176,7 +177,7 @@ async def list_todays_job_cards(
     end_date: Optional[datetime] = Query(default=None),
     current_user: dict = Depends(get_current_user)
 ):
-    now = datetime.utcnow()
+    now = get_current_time()
     
     if start_date:
         start_dt = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)
@@ -259,7 +260,7 @@ async def update_job_card(
     for key, value in update_dict.items():
         setattr(job_card, key, value)
         
-    job_card.updated_at = datetime.utcnow()
+    job_card.updated_at = get_current_time()
     await job_card.save()
     
     return await populate_job_card_details(job_card)

@@ -5,6 +5,7 @@ from app.features.vehicle.vehicle_models import Vehicle, VehicleCreate, VehicleU
 from app.features.customer.customer_models import Customer
 from app.core.security import get_current_user, get_current_admin
 from datetime import datetime
+from app.core.datetime_utils import get_current_time
 
 router = APIRouter(prefix="/vehicles", tags=["Vehicles"])
 
@@ -129,7 +130,7 @@ async def update_vehicle(
     for key, value in update_dict.items():
         setattr(vehicle, key, value)
         
-    vehicle.updated_at = datetime.utcnow()
+    vehicle.updated_at = get_current_time()
     await vehicle.save()
     customer = await Customer.get(vehicle.customer_id)
     customer_name = customer.name if customer else "Unknown Customer"

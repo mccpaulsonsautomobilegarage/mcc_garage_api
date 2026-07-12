@@ -4,6 +4,7 @@ from app.features.job_card.job_card_models import JobCard
 from app.features.invoice.invoice_models import Invoice
 from datetime import datetime
 from typing import Optional
+from app.core.datetime_utils import get_current_time
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -13,7 +14,7 @@ async def get_dashboard_stats(
     end_date: Optional[datetime] = Query(default=None),
     current_user: dict = Depends(get_current_user)
 ):
-    now = datetime.utcnow()
+    now = get_current_time()
     
     if start_date:
         start_dt = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)

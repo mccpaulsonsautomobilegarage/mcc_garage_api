@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field
+from app.core.datetime_utils import get_current_time
 
 class ExpenseBase(BaseModel):
     description: Optional[str] = Field(default=None, description="Description of the expense")
@@ -10,8 +11,8 @@ class ExpenseBase(BaseModel):
     date: datetime = Field(..., description="Date of the expense in ISO8601")
 
 class Expense(Document, ExpenseBase):
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_current_time)
+    updated_at: datetime = Field(default_factory=get_current_time)
     created_by: str = Field(..., description="User who recorded the expense")
 
     class Settings:

@@ -5,6 +5,7 @@ from app.features.invoice.invoice_models import Invoice, InvoiceCreate, InvoiceU
 from app.features.job_card.job_card_models import JobCard
 from app.core.security import get_current_user
 from datetime import datetime, time
+from app.core.datetime_utils import get_current_time
 from app.features.customer.customer_models import Customer
 from app.features.vehicle.vehicle_models import Vehicle
 
@@ -65,7 +66,7 @@ async def populate_invoices_list(invoices: List[Invoice]) -> List[InvoiceOut]:
     return results
 
 async def generate_next_invoice_no() -> str:
-    now = datetime.utcnow()
+    now = get_current_time()
     day_start = datetime.combine(now.date(), time.min)
     day_end = datetime.combine(now.date(), time.max)
     
@@ -189,7 +190,7 @@ async def update_invoice(
     # Recalculate totals after updating values
     invoice.calculate_totals()
     
-    invoice.updated_at = datetime.utcnow()
+    invoice.updated_at = get_current_time()
     await invoice.save()
     return await populate_invoice_details(invoice)
 

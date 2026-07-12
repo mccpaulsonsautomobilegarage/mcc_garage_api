@@ -4,6 +4,7 @@ from beanie import PydanticObjectId
 from app.features.expense.expense_models import Expense, ExpenseCreate, ExpenseUpdate, ExpenseOut
 from app.core.security import get_current_user
 from datetime import datetime
+from app.core.datetime_utils import get_current_time
 
 router = APIRouter(prefix="/expenses", tags=["Expenses"])
 
@@ -71,7 +72,7 @@ async def update_expense(
     for key, value in update_dict.items():
         setattr(expense, key, value)
 
-    expense.updated_at = datetime.utcnow()
+    expense.updated_at = get_current_time()
     await expense.save()
     return expense
 

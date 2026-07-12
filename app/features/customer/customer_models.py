@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field, field_validator
+from app.core.datetime_utils import get_current_time
 import re
 
 def clean_phone_code(v: str) -> str:
@@ -29,8 +30,8 @@ class CustomerBase(BaseModel):
     notes: Optional[str] = Field(default=None, description="Optional customer notes")
 
 class Customer(Document, CustomerBase):
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_current_time)
+    updated_at: datetime = Field(default_factory=get_current_time)
     created_by: str = Field(..., description="Username of the user who registered this customer")
 
     class Settings:
