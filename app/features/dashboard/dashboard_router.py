@@ -37,19 +37,25 @@ async def get_dashboard_stats(
     vehicles_completed = sum(1 for jc in job_cards if jc.status == "Delivered")
     pending_delivery = sum(1 for jc in job_cards if jc.status == "Pending Delivery")
     
-    # 2. Revenue in selected range (sum of paid_amount of invoices created in range)
+    # 2. Revenue in selected range (sum of grand_total of Paid invoices created in range)
     invoices = await Invoice.find(
         Invoice.created_at >= start_dt,
         Invoice.created_at <= end_dt
     ).to_list()
-    today_revenue = sum(inv.paid_amount for inv in invoices)
+    paid_invoices = [inv for inv in invoices if inv.payment_status == "Paid"]
+    today_revenue = sum(inv.grand_total for inv in paid_invoices)
+    today_spare_parts_total = sum(inv.spare_parts_total for inv in paid_invoices)
+    today_labor_total = sum(inv.labor_total for inv in paid_invoices)
     
-    # 3. Monthly Revenue (sum of paid_amount of invoices created this calendar month)
+    # 3. Monthly Revenue (sum of grand_total of Paid invoices created this calendar month)
     start_of_month = datetime(now.year, now.month, 1, 0, 0, 0)
     monthly_invoices = await Invoice.find(
         Invoice.created_at >= start_of_month
     ).to_list()
-    monthly_revenue = sum(inv.paid_amount for inv in monthly_invoices)
+    paid_monthly_invoices = [inv for inv in monthly_invoices if inv.payment_status == "Paid"]
+    monthly_revenue = sum(inv.grand_total for inv in paid_monthly_invoices)
+    monthly_spare_parts_total = sum(inv.spare_parts_total for inv in paid_monthly_invoices)
+    monthly_labor_total = sum(inv.labor_total for inv in paid_monthly_invoices)
     
     # 4. Pending Payments (sum of balance due across all invoices)
     all_invoices = await Invoice.find_all().to_list()
@@ -61,6 +67,10 @@ async def get_dashboard_stats(
         "vehicles_completed": vehicles_completed,
         "pending_delivery": pending_delivery,
         "today_revenue": today_revenue,
+        "today_spare_parts_total": today_spare_parts_total,
+        "today_labor_total": today_labor_total,
         "monthly_revenue": monthly_revenue,
+        "monthly_spare_parts_total": monthly_spare_parts_total,
+        "monthly_labor_total": monthly_labor_total,
         "pending_payments": pending_payments
     }

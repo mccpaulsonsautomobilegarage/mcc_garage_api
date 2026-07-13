@@ -90,6 +90,14 @@ async def create_invoice(invoice_data: InvoiceCreate, current_user: dict = Depen
             detail="The linked Job Card does not exist"
         )
         
+    # 1.5 Prevent duplicate invoice creation for the same Job Card
+    existing_invoice = await Invoice.find_one(Invoice.job_card_id == invoice_data.job_card_id)
+    if existing_invoice:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"An invoice has already been generated for this Job Card (Invoice No: {existing_invoice.invoice_no})"
+        )
+        
     next_invoice_no = await generate_next_invoice_no()
     
     new_invoice = Invoice(
