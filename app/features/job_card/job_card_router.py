@@ -143,7 +143,7 @@ async def list_job_cards(
     vehicle_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by vehicle ID"),
     mechanic_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by assigned mechanic ID"),
     status: Optional[JobStatus] = Query(default=None, description="Filter by job status"),
-    search: Optional[str] = Query(default=None, description="Search by Job Number (case-insensitive)"),
+    search: Optional[str] = Query(default=None, description="Search by Job Number, Customer Name, or Vehicle Registration Number"),
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
@@ -156,7 +156,25 @@ async def list_job_cards(
     if status:
         query["status"] = status
     if search:
-        query["job_no"] = {"$regex": search.strip().upper(), "$options": "i"}
+        search_str = search.strip()
+        # Find matching customer IDs
+        matching_customers = await Customer.find({"name": {"$regex": search_str, "$options": "i"}}).to_list()
+        cust_ids = [c.id for c in matching_customers]
+        
+        # Find matching vehicle IDs
+        matching_vehicles = await Vehicle.find({"registration_number": {"$regex": search_str, "$options": "i"}}).to_list()
+        veh_ids = [v.id for v in matching_vehicles]
+        
+        # Construct $or query conditions
+        conditions = [
+            {"job_no": {"$regex": search_str, "$options": "i"}}
+        ]
+        if cust_ids:
+            conditions.append({"customer_id": {"$in": cust_ids}})
+        if veh_ids:
+            conditions.append({"vehicle_id": {"$in": veh_ids}})
+            
+        query["$or"] = conditions
         
     job_cards = await JobCard.find(query).sort("-created_at").to_list()
     return await populate_job_cards_list(job_cards)

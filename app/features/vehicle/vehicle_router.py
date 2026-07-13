@@ -53,16 +53,30 @@ async def register_vehicle(vehicle_data: VehicleCreate, current_user: dict = Dep
 @router.get("", response_model=List[VehicleOut])
 async def list_vehicles(
     customer_id: Optional[PydanticObjectId] = Query(default=None, description="Filter vehicles by customer ID"),
-    search: Optional[str] = Query(default=None, description="Search by registration number (case-insensitive)"),
+    search: Optional[str] = Query(default=None, description="Search by registration number, brand, model, or owner name"),
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
     if customer_id:
         query["customer_id"] = customer_id
     if search:
-        # Standardize search query to uppercase and clean it (like we clean registration numbers)
-        cleaned_search = search.strip().upper().replace(" ", "").replace("-", "")
-        query["registration_number"] = {"$regex": cleaned_search, "$options": "i"}
+        search_str = search.strip()
+        cleaned_search = search_str.upper().replace(" ", "").replace("-", "")
+        
+        # Find matching customer IDs
+        matching_customers = await Customer.find({"name": {"$regex": search_str, "$options": "i"}}).to_list()
+        cust_ids = [c.id for c in matching_customers]
+        
+        # Construct $or conditions
+        conditions = [
+            {"registration_number": {"$regex": cleaned_search, "$options": "i"}},
+            {"brand_make": {"$regex": search_str, "$options": "i"}},
+            {"model": {"$regex": search_str, "$options": "i"}},
+        ]
+        if cust_ids:
+            conditions.append({"customer_id": {"$in": cust_ids}})
+            
+        query["$or"] = conditions
         
     vehicles = await Vehicle.find(query).to_list()
     if not vehicles:
