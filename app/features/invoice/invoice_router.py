@@ -8,6 +8,7 @@ from datetime import datetime, time
 from app.core.datetime_utils import get_current_time
 from app.features.customer.customer_models import Customer
 from app.features.vehicle.vehicle_models import Vehicle
+from app.features.expense.expense_models import Expense
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
 
@@ -115,6 +116,19 @@ async def create_invoice(invoice_data: InvoiceCreate, current_user: dict = Depen
     new_invoice.calculate_totals()
     
     await new_invoice.insert()
+    
+    # Automatically add to expense table if spare parts total > 0
+    if new_invoice.spare_parts_total > 0:
+        new_expense = Expense(
+            category="Tools Purchase",
+            amount=new_invoice.spare_parts_total,
+            date=new_invoice.created_at,
+            description=f"Spare parts for Invoice: {new_invoice.invoice_no}",
+            job_card_id=new_invoice.job_card_id,
+            created_by=current_user["username"]
+        )
+        await new_expense.insert()
+        
     return await populate_invoice_details(new_invoice)
 
 @router.get("", response_model=List[InvoiceOut])
@@ -138,7 +152,7 @@ async def list_invoices(
     if search:
         query["invoice_no"] = {"$regex": search.strip().upper(), "$options": "i"}
         
-    invoices = await Invoice.find(query).to_list()
+    invoices = await Invoice.find(query).sort("-created_at").to_list()
     return await populate_invoices_list(invoices)
 
 @router.get("/vehicle/{vehicle_id}", response_model=List[InvoiceOut])
@@ -147,7 +161,7 @@ async def list_invoices_by_vehicle(vehicle_id: PydanticObjectId, current_user: d
     if not job_cards:
         return []
     job_card_ids = [jc.id for jc in job_cards]
-    invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).to_list()
+    invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).sort("-created_at").to_list()
     return await populate_invoices_list(invoices)
 
 @router.get("/customer/{customer_id}", response_model=List[InvoiceOut])
@@ -156,7 +170,7 @@ async def list_invoices_by_customer(customer_id: PydanticObjectId, current_user:
     if not job_cards:
         return []
     job_card_ids = [jc.id for jc in job_cards]
-    invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).to_list()
+    invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).sort("-created_at").to_list()
     return await populate_invoices_list(invoices)
 
 @router.get("/{id}", response_model=InvoiceOut)
@@ -191,6 +205,8 @@ async def update_invoice(
                 detail="The linked Job Card does not exist"
             )
             
+    old_job_card_id = invoice.job_card_id
+    
     for field in invoice_data.model_fields_set:
         value = getattr(invoice_data, field)
         setattr(invoice, field, value)
@@ -200,6 +216,30 @@ async def update_invoice(
     
     invoice.updated_at = get_current_time()
     await invoice.save()
+    
+    # Handle corresponding expense record update/creation/deletion
+    existing_expense = await Expense.find_one(Expense.job_card_id == old_job_card_id)
+    if existing_expense:
+        if invoice.spare_parts_total > 0:
+            existing_expense.amount = invoice.spare_parts_total
+            existing_expense.description = f"Spare parts for Invoice: {invoice.invoice_no}"
+            existing_expense.job_card_id = invoice.job_card_id
+            existing_expense.updated_at = get_current_time()
+            await existing_expense.save()
+        else:
+            await existing_expense.delete()
+    else:
+        if invoice.spare_parts_total > 0:
+            new_expense = Expense(
+                category="Tools Purchase",
+                amount=invoice.spare_parts_total,
+                date=invoice.created_at,
+                description=f"Spare parts for Invoice: {invoice.invoice_no}",
+                job_card_id=invoice.job_card_id,
+                created_by=current_user["username"]
+            )
+            await new_expense.insert()
+            
     return await populate_invoice_details(invoice)
 
 @router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -210,5 +250,11 @@ async def delete_invoice(id: PydanticObjectId, current_user: dict = Depends(get_
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invoice not found"
         )
+        
+    # Delete corresponding expense record
+    existing_expense = await Expense.find_one(Expense.job_card_id == invoice.job_card_id)
+    if existing_expense:
+        await existing_expense.delete()
+        
     await invoice.delete()
     return None

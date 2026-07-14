@@ -9,6 +9,7 @@ class ExpenseBase(BaseModel):
     category: str = Field(..., min_length=1, description="Category of the expense")
     amount: float = Field(..., gt=0.0, description="Amount spent")
     date: datetime = Field(..., description="Date of the expense in ISO8601")
+    job_card_id: Optional[PydanticObjectId] = Field(default=None, description="Associated job card ID")
 
 class Expense(Document, ExpenseBase):
     created_at: datetime = Field(default_factory=get_current_time)
@@ -20,6 +21,7 @@ class Expense(Document, ExpenseBase):
         indexes = [
             "category",
             "date",
+            "job_card_id",
         ]
 
 class ExpenseCreate(ExpenseBase):
@@ -30,6 +32,7 @@ class ExpenseUpdate(BaseModel):
     category: Optional[str] = None
     amount: Optional[float] = None
     date: Optional[datetime] = None
+    job_card_id: Optional[PydanticObjectId] = None
 
 class ExpenseOut(ExpenseBase):
     id: PydanticObjectId

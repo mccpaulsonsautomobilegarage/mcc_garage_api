@@ -291,5 +291,19 @@ async def delete_job_card(id: PydanticObjectId, current_user: dict = Depends(get
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Job card not found"
         )
+        
+    # Delete any linked invoice and expense records
+    from app.features.expense.expense_models import Expense
+    
+    # 1. Delete linked invoice
+    linked_invoice = await Invoice.find_one(Invoice.job_card_id == id)
+    if linked_invoice:
+        await linked_invoice.delete()
+        
+    # 2. Delete linked expense
+    linked_expense = await Expense.find_one(Expense.job_card_id == id)
+    if linked_expense:
+        await linked_expense.delete()
+        
     await job_card.delete()
     return None

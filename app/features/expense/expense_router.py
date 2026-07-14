@@ -15,6 +15,7 @@ async def create_expense(expense_data: ExpenseCreate, current_user: dict = Depen
         category=expense_data.category,
         amount=expense_data.amount,
         date=expense_data.date,
+        job_card_id=expense_data.job_card_id,
         created_by=current_user["username"]
     )
     await new_expense.insert()

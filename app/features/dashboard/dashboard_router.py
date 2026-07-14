@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from app.core.security import get_current_user
 from app.features.job_card.job_card_models import JobCard
 from app.features.invoice.invoice_models import Invoice
+from app.features.expense.expense_models import Expense
 from datetime import datetime
 from typing import Optional
 from app.core.datetime_utils import get_current_time
@@ -33,7 +34,7 @@ async def get_dashboard_stats(
     ).to_list()
     
     total_vehicles_today = len(job_cards)
-    vehicles_in_progress = sum(1 for jc in job_cards if jc.status == "In Progress")
+    vehicles_in_progress = await JobCard.find(JobCard.status == "In Progress").count()
     vehicles_completed = sum(1 for jc in job_cards if jc.status == "Delivered")
     pending_delivery = sum(1 for jc in job_cards if jc.status == "Pending Delivery")
     
@@ -61,6 +62,19 @@ async def get_dashboard_stats(
     all_invoices = await Invoice.find_all().to_list()
     pending_payments = sum(max(0.0, inv.grand_total - inv.paid_amount) for inv in all_invoices)
     
+    # 5. Expenses in selected range
+    expenses = await Expense.find(
+        Expense.date >= start_dt,
+        Expense.date <= end_dt
+    ).to_list()
+    today_expense = sum(exp.amount for exp in expenses)
+    
+    # 6. Monthly Expenses
+    monthly_expenses = await Expense.find(
+        Expense.date >= start_of_month
+    ).to_list()
+    monthly_expense = sum(exp.amount for exp in monthly_expenses)
+    
     return {
         "total_vehicles_today": total_vehicles_today,
         "vehicles_in_progress": vehicles_in_progress,
@@ -72,5 +86,7 @@ async def get_dashboard_stats(
         "monthly_revenue": monthly_revenue,
         "monthly_spare_parts_total": monthly_spare_parts_total,
         "monthly_labor_total": monthly_labor_total,
-        "pending_payments": pending_payments
+        "pending_payments": pending_payments,
+        "today_expense": today_expense,
+        "monthly_expense": monthly_expense
     }
