@@ -230,3 +230,66 @@ async def get_daily_report(
         
     daily_rows.sort(key=lambda x: x["date"], reverse=True)
     return daily_rows
+
+@router.get("/pending-payment-customers")
+async def get_pending_payment_customers(
+    current_user: dict = Depends(get_current_user)
+):
+    now = get_current_time()
+    threshold = now - timedelta(days=1)
+    
+    # Query all unpaid or partially paid invoices older than 2 days
+    invoices = await Invoice.find(
+        Invoice.created_at <= threshold,
+        Invoice.payment_status != "Paid"
+    ).to_list()
+    
+    # Extract unique job card IDs, customer IDs, vehicle IDs
+    job_card_ids = [inv.job_card_id for inv in invoices]
+    job_cards = await JobCard.find({"_id": {"$in": job_card_ids}}).to_list()
+    jc_map = {jc.id: jc for jc in job_cards}
+    
+    cust_ids = list({jc.customer_id for jc in job_cards})
+    customers = await Customer.find({"_id": {"$in": cust_ids}}).to_list()
+    cust_map = {c.id: c for c in customers}
+    
+    veh_ids = list({jc.vehicle_id for jc in job_cards})
+    vehicles = await Vehicle.find({"_id": {"$in": veh_ids}}).to_list()
+    veh_map = {v.id: v for v in vehicles}
+    
+    # Build list of pending payment customer records
+    results = []
+    for inv in invoices:
+        jc = jc_map.get(inv.job_card_id)
+        if not jc:
+            continue
+            
+        customer = cust_map.get(jc.customer_id)
+        vehicle = veh_map.get(jc.vehicle_id)
+        
+        # Calculate days pending
+        days_pending = (now - inv.created_at).days
+        
+        results.append({
+            "invoice_id": str(inv.id),
+            "invoice_no": inv.invoice_no,
+            "grand_total": inv.grand_total,
+            "paid_amount": inv.paid_amount,
+            "pending_amount": inv.pending_amount,
+            "payment_status": inv.payment_status,
+            "created_at": inv.created_at.isoformat(),
+            "days_pending": days_pending,
+            "customer": {
+                "id": str(customer.id) if customer else "",
+                "name": customer.name if customer else "Unknown",
+                "phone": f"{customer.phone_code} {customer.phone_number}" if customer else ""
+            } if customer else None,
+            "vehicle": {
+                "registration_number": vehicle.registration_number if vehicle else "",
+                "brand_model": f"{vehicle.brand_make} {vehicle.model or ''}".strip() if vehicle else ""
+            } if vehicle else None
+        })
+        
+    # Sort by days pending (longest pending first)
+    results.sort(key=lambda x: x["days_pending"], reverse=True)
+    return results
