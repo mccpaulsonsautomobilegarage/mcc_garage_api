@@ -2,9 +2,10 @@ from datetime import datetime
 from typing import Optional, Literal
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field
+from app.core.datetime_utils import get_current_time
 
 FuelLevel = Literal["Empty", "Quarter", "Half", "Full"]
-JobStatus = Literal["In Progress", "Completed", "Pending Delivery", "Pending Payment"]
+JobStatus = Literal["In Progress", "Delivered", "Pending Delivery"]
 
 class JobCardBase(BaseModel):
     customer_id: PydanticObjectId = Field(..., description="Linked customer account ID")
@@ -30,8 +31,8 @@ class JobCardBase(BaseModel):
 class JobCard(Document, JobCardBase):
     job_no: str = Field(..., unique=True, description="Unique human-readable job number (e.g. JOB-2401)")
     status: JobStatus = Field(default="In Progress", description="Status of the job")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_current_time)
+    updated_at: datetime = Field(default_factory=get_current_time)
     created_by: str = Field(..., description="Username of the user who registered this job card")
 
     class Settings:
@@ -77,3 +78,5 @@ class JobCardOut(JobCardBase):
     vehicle_number: str = ""
     customer_name: str = ""
     payment_status: str = "Unpaid"
+    is_invoice_created: bool = False
+    invoice_id: Optional[str] = None

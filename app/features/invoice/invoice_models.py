@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional, Literal
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field
+from app.core.datetime_utils import get_current_time
 
 PaymentStatus = Literal["Pending", "Partial", "Paid"]
 PaymentMethod = Literal["Cash", "Card", "UPI", "Bank Transfer", "Other"]
@@ -30,8 +31,8 @@ class Invoice(Document, InvoiceBase):
     grand_total: float = Field(default=0.0, description="Grand total cost (spare parts + labor)")
     paid_amount: float = Field(default=0.0, description="Amount paid so far")
     pending_amount: float = Field(default=0.0, description="Amount pending")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_current_time)
+    updated_at: datetime = Field(default_factory=get_current_time)
     created_by: str = Field(..., description="Username of the user who registered this invoice")
 
     def calculate_totals(self):

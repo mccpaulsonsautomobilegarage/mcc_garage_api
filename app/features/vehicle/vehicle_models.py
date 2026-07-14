@@ -3,6 +3,7 @@ from typing import Optional
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field, field_validator, StringConstraints
 from typing_extensions import Annotated
+from app.core.datetime_utils import get_current_time
 
 class VehicleBase(BaseModel):
     customer_id: PydanticObjectId = Field(..., description="ID of the customer who owns this vehicle")
@@ -20,8 +21,8 @@ class VehicleBase(BaseModel):
     rc_details: Optional[Annotated[str, StringConstraints(max_length=50)]] = Field(default=None, description="Optional Registration Card (RC) details, max 50 chars")
 
 class Vehicle(Document, VehicleBase):
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_current_time)
+    updated_at: datetime = Field(default_factory=get_current_time)
     created_by: str = Field(..., description="Username of the user who registered this vehicle")
 
     class Settings:
