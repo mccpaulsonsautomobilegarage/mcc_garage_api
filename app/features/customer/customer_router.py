@@ -68,9 +68,9 @@ async def list_customers(
                 {"name": {"$regex": search, "$options": "i"}},
                 {"phone_number": {"$regex": search, "$options": "i"}}
             ]}
-        ).to_list()
+        ).sort("-created_at").to_list()
     else:
-        customers = await Customer.find_all().to_list()
+        customers = await Customer.find_all().sort("-created_at").to_list()
         
     if not customers:
         return []

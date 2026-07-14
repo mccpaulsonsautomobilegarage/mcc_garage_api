@@ -78,7 +78,7 @@ async def list_vehicles(
             
         query["$or"] = conditions
         
-    vehicles = await Vehicle.find(query).to_list()
+    vehicles = await Vehicle.find(query).sort("-created_at").to_list()
     if not vehicles:
         return []
         
