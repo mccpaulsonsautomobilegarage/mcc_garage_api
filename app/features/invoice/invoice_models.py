@@ -23,6 +23,8 @@ class InvoiceBase(BaseModel):
     payment_status: PaymentStatus = Field(default="Pending", description="Status of the payment")
     payment_method: PaymentMethod = Field(default="Cash", description="Method used for payment")
     paid_amount: float = Field(default=0.0, description="Amount paid so far (used for Partial/Paid)")
+    bill_urls: List[str] = Field(default=[], description="URLs of the uploaded invoice bills")
+
 
 class Invoice(Document, InvoiceBase):
     invoice_no: str = Field(..., unique=True, description="Unique invoice number (e.g. INV-2401)")
@@ -66,6 +68,8 @@ class InvoiceUpdate(BaseModel):
     payment_status: Optional[PaymentStatus] = None
     payment_method: Optional[PaymentMethod] = None
     paid_amount: Optional[float] = None
+    bill_urls: Optional[List[str]] = None
+
 
 class InvoiceOut(InvoiceBase):
     id: PydanticObjectId
@@ -84,3 +88,4 @@ class InvoiceOut(InvoiceBase):
     registration_number: str = ""
     brand_make: str = ""
     model: str = ""
+    odometer: Optional[float] = None
