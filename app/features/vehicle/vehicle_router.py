@@ -133,11 +133,23 @@ async def register_vehicle(
 async def list_vehicles(
     customer_id: Optional[PydanticObjectId] = Query(default=None, description="Filter vehicles by customer ID"),
     search: Optional[str] = Query(default=None, description="Search by registration number, brand, model, or owner name"),
+    fuel_type: Optional[str] = Query(default=None, description="Filter vehicles by fuel type"),
+    start_date: Optional[datetime] = Query(default=None, description="Start date for filtering"),
+    end_date: Optional[datetime] = Query(default=None, description="End date for filtering"),
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
     if customer_id:
         query["customer_id"] = customer_id
+    if fuel_type:
+        query["fuel_type"] = {"$regex": f"^{fuel_type.strip()}$", "$options": "i"}
+    if start_date or end_date:
+        date_query = {}
+        if start_date:
+            date_query["$gte"] = start_date
+        if end_date:
+            date_query["$lte"] = end_date
+        query["created_at"] = date_query
     if search:
         search_str = search.strip()
         cleaned_search = search_str.upper().replace(" ", "").replace("-", "")
