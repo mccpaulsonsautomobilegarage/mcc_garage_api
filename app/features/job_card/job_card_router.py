@@ -145,6 +145,8 @@ async def list_job_cards(
     status: Optional[JobStatus] = Query(default=None, description="Filter by job status"),
     payment_status: Optional[str] = Query(default=None, description="Filter by payment status (Paid, Unpaid)"),
     search: Optional[str] = Query(default=None, description="Search by Job Number, Customer Name, or Vehicle Registration Number"),
+    start_date: Optional[datetime] = Query(default=None, description="Start date for filtering"),
+    end_date: Optional[datetime] = Query(default=None, description="End date for filtering"),
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
@@ -156,6 +158,14 @@ async def list_job_cards(
         query["mechanic_id"] = mechanic_id
     if status:
         query["status"] = status
+        
+    if start_date or end_date:
+        date_query = {}
+        if start_date:
+            date_query["$gte"] = start_date
+        if end_date:
+            date_query["$lte"] = end_date
+        query["created_at"] = date_query
         
     if payment_status:
         val = payment_status.strip().lower()
