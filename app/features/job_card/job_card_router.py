@@ -167,11 +167,15 @@ async def list_job_cards(
             partial_invoices = await Invoice.find(Invoice.payment_status == "Partial").to_list()
             partial_job_card_ids = [inv.job_card_id for inv in partial_invoices]
             query["_id"] = {"$in": partial_job_card_ids}
+        elif val == "pending":
+            pending_invoices = await Invoice.find(Invoice.payment_status == "Pending").to_list()
+            pending_job_card_ids = [inv.job_card_id for inv in pending_invoices]
+            query["_id"] = {"$in": pending_job_card_ids}
         elif val == "unpaid":
-            # Unpaid matches either no invoice at all, or an invoice that isn't Paid/Partial
-            non_unpaid_invoices = await Invoice.find({"payment_status": {"$in": ["Paid", "Partial"]}}).to_list()
-            non_unpaid_job_card_ids = [inv.job_card_id for inv in non_unpaid_invoices]
-            query["_id"] = {"$nin": non_unpaid_job_card_ids}
+            # Unpaid matches job cards that have no invoice created at all
+            all_invoices = await Invoice.all().to_list()
+            invoice_job_card_ids = [inv.job_card_id for inv in all_invoices]
+            query["_id"] = {"$nin": invoice_job_card_ids}
 
     if search:
         search_str = search.strip()
