@@ -143,6 +143,7 @@ async def list_job_cards(
     vehicle_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by vehicle ID"),
     mechanic_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by assigned mechanic ID"),
     status: Optional[JobStatus] = Query(default=None, description="Filter by job status"),
+    payment_status: Optional[str] = Query(default=None, description="Filter by payment status (Paid, Unpaid)"),
     search: Optional[str] = Query(default=None, description="Search by Job Number, Customer Name, or Vehicle Registration Number"),
     current_user: dict = Depends(get_current_user)
 ):
@@ -155,6 +156,23 @@ async def list_job_cards(
         query["mechanic_id"] = mechanic_id
     if status:
         query["status"] = status
+        
+    if payment_status:
+        val = payment_status.strip().lower()
+        if val == "paid":
+            paid_invoices = await Invoice.find(Invoice.payment_status == "Paid").to_list()
+            paid_job_card_ids = [inv.job_card_id for inv in paid_invoices]
+            query["_id"] = {"$in": paid_job_card_ids}
+        elif val == "partial":
+            partial_invoices = await Invoice.find(Invoice.payment_status == "Partial").to_list()
+            partial_job_card_ids = [inv.job_card_id for inv in partial_invoices]
+            query["_id"] = {"$in": partial_job_card_ids}
+        elif val == "unpaid":
+            # Unpaid matches either no invoice at all, or an invoice that isn't Paid/Partial
+            non_unpaid_invoices = await Invoice.find({"payment_status": {"$in": ["Paid", "Partial"]}}).to_list()
+            non_unpaid_job_card_ids = [inv.job_card_id for inv in non_unpaid_invoices]
+            query["_id"] = {"$nin": non_unpaid_job_card_ids}
+
     if search:
         search_str = search.strip()
         # Find matching customer IDs
