@@ -41,29 +41,62 @@ async def get_dashboard_stats(
     vehicles_completed = sum(1 for jc in job_cards if jc.status == "Delivered")
     pending_delivery = sum(1 for jc in job_cards if jc.status == "Pending Delivery")
     
-    # 2. Revenue in selected range (sum of grand_total of Paid invoices created in range)
+    # 2. Revenue in selected range (sum of revenue from Paid & Partial invoices created in range)
     invoices = await Invoice.find(
         Invoice.created_at >= start_dt,
         Invoice.created_at <= end_dt
     ).to_list()
-    paid_invoices = [inv for inv in invoices if inv.payment_status == "Paid"]
-    today_revenue = sum(inv.grand_total for inv in paid_invoices)
-    today_spare_parts_total = sum(inv.spare_parts_total for inv in paid_invoices)
-    today_labor_total = sum(inv.labor_total for inv in paid_invoices)
     
-    # 3. Monthly Revenue (sum of grand_total of Paid invoices created this calendar month)
-    start_of_month = datetime(now.year, now.month, 1, 0, 0, 0)
+    today_revenue = 0.0
+    today_spare_parts_total = 0.0
+    today_labor_total = 0.0
+    for inv in invoices:
+        if inv.payment_status == "Paid":
+            today_revenue += inv.grand_total
+            today_spare_parts_total += inv.spare_parts_total
+            today_labor_total += inv.labor_total
+        elif inv.payment_status == "Partial":
+            today_revenue += inv.paid_amount
+            today_spare_parts_total += inv.spare_parts_total
+            today_labor_total += inv.labor_total
+    
+    # Determine target month for monthly stats
+    target_year = start_dt.year
+    target_month = start_dt.month
+    start_of_month = datetime(target_year, target_month, 1, 0, 0, 0)
+    if target_month == 12:
+        next_month_start = datetime(target_year + 1, 1, 1, 0, 0, 0)
+    else:
+        next_month_start = datetime(target_year, target_month + 1, 1, 0, 0, 0)
+    end_of_month = next_month_start - timedelta(seconds=1)
+
+    # 3. Monthly Revenue (sum of revenue from Paid & Partial invoices created in target calendar month)
     monthly_invoices = await Invoice.find(
-        Invoice.created_at >= start_of_month
+        Invoice.created_at >= start_of_month,
+        Invoice.created_at <= end_of_month
     ).to_list()
-    paid_monthly_invoices = [inv for inv in monthly_invoices if inv.payment_status == "Paid"]
-    monthly_revenue = sum(inv.grand_total for inv in paid_monthly_invoices)
-    monthly_spare_parts_total = sum(inv.spare_parts_total for inv in paid_monthly_invoices)
-    monthly_labor_total = sum(inv.labor_total for inv in paid_monthly_invoices)
     
-    # 4. Pending Payments (sum of balance due across all invoices)
+    monthly_revenue = 0.0
+    monthly_spare_parts_total = 0.0
+    monthly_labor_total = 0.0
+    for inv in monthly_invoices:
+        if inv.payment_status == "Paid":
+            monthly_revenue += inv.grand_total
+            monthly_spare_parts_total += inv.spare_parts_total
+            monthly_labor_total += inv.labor_total
+        elif inv.payment_status == "Partial":
+            monthly_revenue += inv.paid_amount
+            monthly_spare_parts_total += inv.spare_parts_total
+            monthly_labor_total += inv.labor_total
+    
+    # 4. Pending Payments (sum of balance due across Pending and Partial status invoices)
     all_invoices = await Invoice.find_all().to_list()
-    pending_payments = sum(max(0.0, inv.grand_total - inv.paid_amount) for inv in all_invoices)
+    pending_payments = 0.0
+    for inv in all_invoices:
+        if inv.payment_status == "Pending":
+            pending_payments += inv.grand_total
+        elif inv.payment_status == "Partial":
+            pending_payments += max(0.0, inv.grand_total - inv.paid_amount)
     
     # 5. Expenses in selected range
     expenses = await Expense.find(
@@ -72,9 +105,10 @@ async def get_dashboard_stats(
     ).to_list()
     today_expense = sum(exp.amount for exp in expenses)
     
-    # 6. Monthly Expenses
+    # 6. Monthly Expenses in target calendar month
     monthly_expenses = await Expense.find(
-        Expense.date >= start_of_month
+        Expense.date >= start_of_month,
+        Expense.date <= end_of_month
     ).to_list()
     monthly_expense = sum(exp.amount for exp in monthly_expenses)
     
