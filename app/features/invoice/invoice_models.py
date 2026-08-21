@@ -4,7 +4,7 @@ from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field
 from app.core.datetime_utils import get_current_time
 
-PaymentStatus = Literal["Pending", "Partial", "Paid"]
+PaymentStatus = Literal["Pending", "Partial", "Paid", "Draft"]
 PaymentMethod = Literal["Cash", "Card", "UPI", "Bank Transfer", "Other"]
 
 class SparePart(BaseModel):
@@ -24,6 +24,7 @@ class InvoiceBase(BaseModel):
     payment_method: PaymentMethod = Field(default="Cash", description="Method used for payment")
     paid_amount: float = Field(default=0.0, description="Amount paid so far (used for Partial/Paid)")
     bill_urls: List[str] = Field(default=[], description="URLs of the uploaded invoice bills")
+    is_draft: bool = Field(default=False, description="Whether this invoice is saved as a Draft")
 
 
 class Invoice(Document, InvoiceBase):
@@ -42,10 +43,19 @@ class Invoice(Document, InvoiceBase):
         self.labor_total = sum(item.cost for item in self.labor_charges)
         self.grand_total = self.spare_parts_total + self.labor_total
         
-        if self.payment_status == "Paid":
-            self.paid_amount = self.grand_total
-        elif self.payment_status == "Pending":
+        if self.is_draft:
+            self.payment_status = "Draft"
             self.paid_amount = 0.0
+        elif self.payment_status == "Paid":
+            self.paid_amount = self.grand_total
+        elif self.payment_status == "Pending" or self.payment_status == "Draft":
+            if self.paid_amount > 0 and self.paid_amount < self.grand_total:
+                self.payment_status = "Partial"
+            elif self.paid_amount >= self.grand_total and self.grand_total > 0:
+                self.payment_status = "Paid"
+            else:
+                self.payment_status = "Pending"
+                self.paid_amount = 0.0
             
         self.paid_amount = min(self.paid_amount, self.grand_total)
         self.pending_amount = max(0.0, self.grand_total - self.paid_amount)
@@ -56,6 +66,7 @@ class Invoice(Document, InvoiceBase):
             "invoice_no",
             "job_card_id",
             "payment_status",
+            "is_draft",
         ]
 
 class InvoiceCreate(InvoiceBase):
@@ -69,6 +80,7 @@ class InvoiceUpdate(BaseModel):
     payment_method: Optional[PaymentMethod] = None
     paid_amount: Optional[float] = None
     bill_urls: Optional[List[str]] = None
+    is_draft: Optional[bool] = None
 
 
 class InvoiceOut(InvoiceBase):

@@ -24,8 +24,9 @@ async def populate_job_card_details(job_card: JobCard) -> JobCardOut:
         mechanic_name=mechanic.full_name if mechanic else "Unknown Mechanic",
         vehicle_number=vehicle.registration_number if vehicle else "Unknown Vehicle",
         customer_name=customer.name if customer else "Unknown Customer",
-        payment_status=invoice.payment_status if invoice else "Unpaid",
+        payment_status=invoice.payment_status if (invoice and not invoice.is_draft) else "Unpaid",
         is_invoice_created=invoice is not None,
+        is_invoice_draft=invoice.is_draft if invoice else False,
         invoice_id=str(invoice.id) if invoice else None
     )
 
@@ -54,8 +55,9 @@ async def populate_job_cards_list(job_cards: List[JobCard]) -> List[JobCardOut]:
             mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
             vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
             customer_name=cust_map.get(jc.customer_id, "Unknown Customer"),
-            payment_status=invoice_map[jc.id].payment_status if jc.id in invoice_map else "Unpaid",
+            payment_status=invoice_map[jc.id].payment_status if (jc.id in invoice_map and not invoice_map[jc.id].is_draft) else "Unpaid",
             is_invoice_created=jc.id in invoice_map,
+            is_invoice_draft=invoice_map[jc.id].is_draft if jc.id in invoice_map else False,
             invoice_id=str(invoice_map[jc.id].id) if jc.id in invoice_map else None
         )
         for jc in job_cards
@@ -178,13 +180,17 @@ async def list_job_cards(
             partial_job_card_ids = [inv.job_card_id for inv in partial_invoices]
             query["_id"] = {"$in": partial_job_card_ids}
         elif val == "pending":
-            pending_invoices = await Invoice.find(Invoice.payment_status == "Pending").to_list()
+            pending_invoices = await Invoice.find(Invoice.payment_status == "Pending", {"is_draft": {"$ne": True}}).to_list()
             pending_job_card_ids = [inv.job_card_id for inv in pending_invoices]
             query["_id"] = {"$in": pending_job_card_ids}
+        elif val == "draft":
+            draft_invoices = await Invoice.find(Invoice.is_draft == True).to_list()
+            draft_job_card_ids = [inv.job_card_id for inv in draft_invoices]
+            query["_id"] = {"$in": draft_job_card_ids}
         elif val == "unpaid":
-            # Unpaid matches job cards that have no invoice created at all
-            all_invoices = await Invoice.all().to_list()
-            invoice_job_card_ids = [inv.job_card_id for inv in all_invoices]
+            # Unpaid matches job cards that have no finalized invoice
+            non_draft_invoices = await Invoice.find({"is_draft": {"$ne": True}}).to_list()
+            invoice_job_card_ids = [inv.job_card_id for inv in non_draft_invoices]
             query["_id"] = {"$nin": invoice_job_card_ids}
 
     if search:

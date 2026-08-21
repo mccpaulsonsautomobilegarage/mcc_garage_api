@@ -79,4 +79,5 @@ class JobCardOut(JobCardBase):
     customer_name: str = ""
     payment_status: str = "Unpaid"
     is_invoice_created: bool = False
+    is_invoice_draft: bool = False
     invoice_id: Optional[str] = None

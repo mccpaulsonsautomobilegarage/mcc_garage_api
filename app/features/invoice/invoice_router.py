@@ -93,6 +93,7 @@ async def create_invoice(
     payment_status: str = Form("Pending"),
     payment_method: str = Form("Cash"),
     paid_amount: str = Form("0.0"),
+    is_draft: Optional[str] = Form("false"),
     bills: List[UploadFile] = File(default=[]),
     current_user: dict = Depends(get_current_user)
 ):
@@ -136,6 +137,8 @@ async def create_invoice(
             detail="Invalid paid_amount value"
         )
 
+    is_draft_bool = str(is_draft).lower() in ("true", "1")
+
     # Validate utilizing InvoiceCreate
     try:
         invoice_data = InvoiceCreate(
@@ -144,7 +147,8 @@ async def create_invoice(
             labor_charges=parsed_labor_charges,
             payment_status=payment_status,
             payment_method=payment_method,
-            paid_amount=cleaned_paid_amount
+            paid_amount=cleaned_paid_amount,
+            is_draft=is_draft_bool
         )
     except ValueError as e:
         raise HTTPException(
@@ -165,7 +169,7 @@ async def create_invoice(
     if existing_invoice:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"An invoice has already been generated for this Job Card (Invoice No: {existing_invoice.invoice_no})"
+            detail=f"An invoice has already been created for this Job Card (Invoice No: {existing_invoice.invoice_no})"
         )
 
     # 7. Handle S3 bills upload if files are provided
@@ -187,6 +191,7 @@ async def create_invoice(
         payment_status=invoice_data.payment_status,
         payment_method=invoice_data.payment_method,
         paid_amount=invoice_data.paid_amount,
+        is_draft=invoice_data.is_draft,
         bill_urls=bill_urls,
         created_by=current_user["username"]
     )
@@ -196,8 +201,8 @@ async def create_invoice(
     
     await new_invoice.insert()
     
-    # Automatically add to expense table if spare parts total > 0
-    if new_invoice.spare_parts_total > 0:
+    # Automatically add to expense table if spare parts total > 0 and NOT draft
+    if not new_invoice.is_draft and new_invoice.spare_parts_total > 0:
         new_expense = Expense(
             category="Tools Purchase",
             amount=new_invoice.spare_parts_total,
@@ -284,6 +289,7 @@ async def update_invoice(
     payment_status: Optional[str] = Form(None),
     payment_method: Optional[str] = Form(None),
     paid_amount: Optional[str] = Form(None),
+    is_draft: Optional[str] = Form(None),
     existing_bill_urls: Optional[str] = Form(None),
     bills: List[UploadFile] = File(default=[]),
     current_user: dict = Depends(get_current_user)
@@ -355,6 +361,10 @@ async def update_invoice(
                 )
         else:
             update_dict["paid_amount"] = 0.0
+
+    if "is_draft" in form_data:
+        if is_draft is not None:
+            update_dict["is_draft"] = str(is_draft).lower() in ("true", "1")
 
     # Validate utilizing InvoiceUpdate
     try:

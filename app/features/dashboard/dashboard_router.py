@@ -44,7 +44,8 @@ async def get_dashboard_stats(
     # 2. Revenue in selected range (sum of revenue from Paid & Partial invoices created in range)
     invoices = await Invoice.find(
         Invoice.created_at >= start_dt,
-        Invoice.created_at <= end_dt
+        Invoice.created_at <= end_dt,
+        {"is_draft": {"$ne": True}}
     ).to_list()
     
     today_revenue = 0.0
@@ -73,7 +74,8 @@ async def get_dashboard_stats(
     # 3. Monthly Revenue (sum of revenue from Paid & Partial invoices created in target calendar month)
     monthly_invoices = await Invoice.find(
         Invoice.created_at >= start_of_month,
-        Invoice.created_at <= end_of_month
+        Invoice.created_at <= end_of_month,
+        {"is_draft": {"$ne": True}}
     ).to_list()
     
     monthly_revenue = 0.0
@@ -89,8 +91,8 @@ async def get_dashboard_stats(
             monthly_spare_parts_total += inv.spare_parts_total
             monthly_labor_total += inv.labor_total
     
-    # 4. Pending Payments (sum of balance due across Pending and Partial status invoices)
-    all_invoices = await Invoice.find_all().to_list()
+    # 4. Pending Payments (sum of balance due across Pending and Partial status non-draft invoices)
+    all_invoices = await Invoice.find({"is_draft": {"$ne": True}}).to_list()
     pending_payments = 0.0
     for inv in all_invoices:
         if inv.payment_status == "Pending":
@@ -173,7 +175,8 @@ async def get_dashboard_stats(
     
     today_invoices_list = await Invoice.find(
         Invoice.created_at >= today_start_dt,
-        Invoice.created_at <= today_end_dt
+        Invoice.created_at <= today_end_dt,
+        {"is_draft": {"$ne": True}}
     ).to_list()
     
     today_invoices_count = len(today_invoices_list)
@@ -238,7 +241,8 @@ async def get_daily_report(
     # Query database records in range
     invoices = await Invoice.find(
         Invoice.created_at >= start_dt,
-        Invoice.created_at <= end_dt
+        Invoice.created_at <= end_dt,
+        {"is_draft": {"$ne": True}}
     ).to_list()
     
     expenses = await Expense.find(
