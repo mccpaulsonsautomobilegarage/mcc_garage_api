@@ -38,9 +38,11 @@ async def list_expenses(
     if start_date or end_date:
         date_query = {}
         if start_date:
-            date_query["$gte"] = start_date
+            start_dt = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)
+            date_query["$gte"] = start_dt
         if end_date:
-            date_query["$lte"] = end_date
+            end_dt = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59)
+            date_query["$lte"] = end_dt
         query["date"] = date_query
 
     expenses = await Expense.find(query).sort("-date").to_list()

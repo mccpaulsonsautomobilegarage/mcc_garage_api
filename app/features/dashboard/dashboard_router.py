@@ -133,6 +133,29 @@ async def get_dashboard_stats(
         for name, stats in mech_stats.items()
     ]
     
+    # 10. Today's Invoices Summary (for current calendar day)
+    today_start_dt = datetime(now.year, now.month, now.day, 0, 0, 0)
+    today_end_dt = datetime(now.year, now.month, now.day, 23, 59, 59)
+    
+    today_invoices_list = await Invoice.find(
+        Invoice.created_at >= today_start_dt,
+        Invoice.created_at <= today_end_dt
+    ).to_list()
+    
+    today_invoices_count = len(today_invoices_list)
+    today_paid_revenue_val = 0.0
+    today_total_billed_val = 0.0
+    today_labor_cost_val = 0.0
+    
+    for inv in today_invoices_list:
+        today_total_billed_val += inv.grand_total
+        today_labor_cost_val += inv.labor_total
+        
+        if inv.payment_status == "Paid":
+            today_paid_revenue_val += inv.grand_total
+        elif inv.payment_status == "Partial":
+            today_paid_revenue_val += inv.paid_amount
+    
     return {
         "total_vehicles_today": total_vehicles_today,
         "vehicles_in_progress": vehicles_in_progress,
@@ -150,7 +173,13 @@ async def get_dashboard_stats(
         "new_customers": new_customers,
         "repeat_rate": repeat_rate,
         "top_vehicles": top_vehicles,
-        "mechanic_productivity": mechanic_productivity
+        "mechanic_productivity": mechanic_productivity,
+        "today_summary": {
+            "vehicles": today_invoices_count,
+            "paid_revenue": today_paid_revenue_val,
+            "total_billed": today_total_billed_val,
+            "labor_cost": today_labor_cost_val
+        }
     }
 
 @router.get("/daily-report")
@@ -173,11 +202,6 @@ async def get_daily_report(
         end_dt = datetime(now.year, now.month, now.day, 23, 59, 59)
         
     # Query database records in range
-    job_cards = await JobCard.find(
-        JobCard.created_at >= start_dt,
-        JobCard.created_at <= end_dt
-    ).to_list()
-    
     invoices = await Invoice.find(
         Invoice.created_at >= start_dt,
         Invoice.created_at <= end_dt
@@ -188,17 +212,26 @@ async def get_daily_report(
         Expense.date <= end_dt
     ).to_list()
     
-    # Aggregate counts/totals day-by-day
-    jc_by_date = {}
-    for jc in job_cards:
-        d_str = jc.created_at.strftime("%Y-%m-%d")
-        jc_by_date[d_str] = jc_by_date.get(d_str, 0) + 1
-        
+    # Aggregate counts/totals day-by-day based on generated invoices
     inv_by_date = {}
+    paid_inv_by_date = {}
+    labor_by_date = {}
+    veh_count_by_date = {}
     for inv in invoices:
+        d_str = inv.created_at.strftime("%Y-%m-%d")
+        inv_by_date[d_str] = inv_by_date.get(d_str, 0.0) + inv.grand_total
+        
+        # Calculate paid revenue incorporating both Paid and Partial status invoices
         if inv.payment_status == "Paid":
-            d_str = inv.created_at.strftime("%Y-%m-%d")
-            inv_by_date[d_str] = inv_by_date.get(d_str, 0.0) + inv.grand_total
+            paid_val = inv.grand_total
+        elif inv.payment_status == "Partial":
+            paid_val = inv.paid_amount
+        else:
+            paid_val = 0.0
+            
+        paid_inv_by_date[d_str] = paid_inv_by_date.get(d_str, 0.0) + paid_val
+        labor_by_date[d_str] = labor_by_date.get(d_str, 0.0) + inv.labor_total
+        veh_count_by_date[d_str] = veh_count_by_date.get(d_str, 0) + 1
             
     exp_by_date = {}
     for exp in expenses:
@@ -211,19 +244,25 @@ async def get_daily_report(
     while curr <= end_dt:
         d_str = curr.strftime("%Y-%m-%d")
         
-        vehicles = jc_by_date.get(d_str, 0)
-        revenue = inv_by_date.get(d_str, 0.0)
+        vehicles = veh_count_by_date.get(d_str, 0)
+        total_billed = inv_by_date.get(d_str, 0.0)
+        paid_amount = paid_inv_by_date.get(d_str, 0.0)
+        labor_cost = labor_by_date.get(d_str, 0.0)
         expense = exp_by_date.get(d_str, 0.0)
-        profit = revenue - expense
         
         # Only add rows with activity to keep the table clean
-        if vehicles > 0 or revenue > 0 or expense > 0:
+        if vehicles > 0 or total_billed > 0 or expense > 0:
             daily_rows.append({
                 "date": d_str,
                 "vehicles": vehicles,
-                "revenue": revenue,
+                "revenue": paid_amount,        # Revenue is the paid amount
+                "paid_amount": paid_amount,
+                "total_billed": total_billed,  # Total invoiced amount without paid restriction
+                "labor_cost": labor_cost,
                 "expense": expense,
-                "profit": profit
+                "paid_profit": paid_amount - expense,
+                "billed_profit": total_billed - expense,
+                "profit": paid_amount - expense
             })
             
         curr += timedelta(days=1)

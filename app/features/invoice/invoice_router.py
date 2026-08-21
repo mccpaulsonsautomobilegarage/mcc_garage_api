@@ -216,6 +216,8 @@ async def list_invoices(
     vehicle_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by Vehicle ID"),
     payment_status: Optional[PaymentStatus] = Query(default=None, description="Filter by payment status"),
     search: Optional[str] = Query(default=None, description="Search by Invoice Number (case-insensitive)"),
+    start_date: Optional[datetime] = Query(default=None, description="Filter by start date"),
+    end_date: Optional[datetime] = Query(default=None, description="Filter by end date"),
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
@@ -230,6 +232,16 @@ async def list_invoices(
         query["payment_status"] = payment_status
     if search:
         query["invoice_no"] = {"$regex": search.strip().upper(), "$options": "i"}
+        
+    date_query = {}
+    if start_date:
+        start_dt = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)
+        date_query["$gte"] = start_dt
+    if end_date:
+        end_dt = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59)
+        date_query["$lte"] = end_dt
+    if date_query:
+        query["created_at"] = date_query
         
     invoices = await Invoice.find(query).sort("-created_at").to_list()
     return await populate_invoices_list(invoices)
