@@ -20,6 +20,8 @@ class VehicleBase(BaseModel):
     insurance_expiry_date: Optional[datetime] = Field(default=None, description="Optional Insurance expiry date (ISO 8601 format)")
     rc_details: Optional[Annotated[str, StringConstraints(max_length=50)]] = Field(default=None, description="Optional Registration Card (RC) details, max 50 chars")
     photo_url: Optional[str] = Field(default=None, description="URL of the vehicle's photo")
+    next_service_date: Optional[datetime] = Field(default=None, description="Recommended next service date")
+    next_service_type: Optional[str] = Field(default=None, description="Recommended next service type")
 
 
 class Vehicle(Document, VehicleBase):
@@ -68,6 +70,8 @@ class VehicleUpdate(BaseModel):
     insurance_expiry_date: Optional[datetime] = None
     rc_details: Optional[str] = None
     photo_url: Optional[str] = None
+    next_service_date: Optional[datetime] = None
+    next_service_type: Optional[str] = None
 
 
     @field_validator('registration_number')

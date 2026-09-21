@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from app.core.security import get_current_user
-from app.features.job_card.job_card_models import JobCard, JOB_TYPE_MAP
+from app.features.job_card.job_card_models import JobCard, JOB_TYPE_MAP, NEXT_SERVICE_TYPES
 from app.features.invoice.invoice_models import Invoice
 from app.features.expense.expense_models import Expense
 from app.features.customer.customer_models import Customer
@@ -394,6 +394,96 @@ async def get_pending_payment_customers(
     # Sort by days pending (longest pending first)
     results.sort(key=lambda x: x["days_pending"], reverse=True)
     return results
+
+@router.get("/due-services")
+async def get_due_services(
+    current_user: dict = Depends(get_current_user)
+):
+    now = get_current_time()
+    end_of_today = datetime(now.year, now.month, now.day, 23, 59, 59)
+    
+    # 1. Query vehicles where next_service_date <= end_of_today
+    vehicles = await Vehicle.find(
+        Vehicle.next_service_date != None,
+        Vehicle.next_service_date <= end_of_today
+    ).to_list()
+    
+    # 2. Also check if any job cards have next_service_date <= end_of_today for vehicles not yet covered
+    veh_ids = {v.id for v in vehicles}
+    extra_filter = {"next_service_date": {"$ne": None, "$lte": end_of_today}}
+    if veh_ids:
+        extra_filter["vehicle_id"] = {"$nin": list(veh_ids)}
+    extra_job_cards = await JobCard.find(extra_filter).to_list()
+    
+    if extra_job_cards:
+        extra_veh_ids = list({jc.vehicle_id for jc in extra_job_cards if jc.vehicle_id not in veh_ids})
+        if extra_veh_ids:
+            extra_vehicles = await Vehicle.find({"_id": {"$in": extra_veh_ids}}).to_list()
+            for ev in extra_vehicles:
+                if ev.next_service_date and ev.next_service_date > end_of_today:
+                    continue
+                matching_jc = next((jc for jc in extra_job_cards if jc.vehicle_id == ev.id), None)
+                if matching_jc:
+                    ev.next_service_date = matching_jc.next_service_date
+                    ev.next_service_type = matching_jc.next_service_type
+                vehicles.append(ev)
+                veh_ids.add(ev.id)
+
+    if not vehicles:
+        return []
+
+    # 3. Exclude vehicles currently having an active job card in progress
+    all_veh_ids = [v.id for v in vehicles]
+    active_jobs = await JobCard.find(
+        {"vehicle_id": {"$in": all_veh_ids}, "status": {"$in": ["In Progress", "Pending Delivery"]}}
+    ).to_list()
+    active_veh_ids = {jc.vehicle_id for jc in active_jobs}
+
+    due_vehicles = [v for v in vehicles if v.id not in active_veh_ids]
+    if not due_vehicles:
+        return []
+
+    # 4. Fetch customers
+    cust_ids = list({v.customer_id for v in due_vehicles if v.customer_id})
+    customers = await Customer.find({"_id": {"$in": cust_ids}}).to_list()
+    cust_map = {c.id: c for c in customers}
+
+    # 5. Service work mapping
+    service_work_map = {item["service_type"]: item["typical_work"] for item in NEXT_SERVICE_TYPES}
+
+    results = []
+    for veh in due_vehicles:
+        customer = cust_map.get(veh.customer_id)
+        service_date = veh.next_service_date
+        
+        delta_days = (now.date() - service_date.date()).days
+        days_overdue = max(0, delta_days)
+        is_due_today = (service_date.date() == now.date())
+
+        stype = veh.next_service_type or "General / Basic Service"
+        typical_work = service_work_map.get(stype, "")
+
+        results.append({
+            "vehicle_id": str(veh.id),
+            "registration_number": veh.registration_number or "",
+            "brand_model": f"{veh.brand_make or ''} {veh.model or ''}".strip(),
+            "next_service_date": service_date.isoformat(),
+            "next_service_type": stype,
+            "typical_work": typical_work,
+            "days_overdue": days_overdue,
+            "is_due_today": is_due_today,
+            "customer": {
+                "id": str(customer.id) if customer else "",
+                "name": customer.name if customer else "Unknown Customer",
+                "phone": f"{customer.phone_code or ''} {customer.phone_number or ''}".strip() if customer else "",
+                "phone_code": customer.phone_code or "+91",
+                "phone_number": customer.phone_number or "",
+            } if customer else None,
+        })
+
+    results.sort(key=lambda x: (x["days_overdue"], x["next_service_date"]), reverse=True)
+    return results
+
 
 @router.get("/job-type-report")
 async def get_job_type_report(

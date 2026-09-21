@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
 from beanie import PydanticObjectId
-from app.features.job_card.job_card_models import JobCard, JobCardCreate, JobCardUpdate, JobCardOut, JobStatus, JOB_TYPE_MAP
+from app.features.job_card.job_card_models import JobCard, JobCardCreate, JobCardUpdate, JobCardOut, JobStatus, JOB_TYPE_MAP, NEXT_SERVICE_TYPES
 from app.features.customer.customer_models import Customer
 from app.features.vehicle.vehicle_models import Vehicle
 from app.features.user.user_models import User
@@ -12,6 +12,10 @@ from app.core.datetime_utils import get_current_time
 from app.features.invoice.invoice_models import Invoice
 
 router = APIRouter(prefix="/job-cards", tags=["Job Cards"])
+
+@router.get("/next-service-types")
+async def get_next_service_types(current_user: dict = Depends(get_current_user)):
+    return NEXT_SERVICE_TYPES
 
 async def populate_job_card_details(job_card: JobCard) -> JobCardOut:
     customer = await Customer.get(job_card.customer_id)
@@ -409,6 +413,15 @@ async def update_job_card(
         
     job_card.updated_at = get_current_time()
     await job_card.save()
+
+    if job_card_data.next_service_date or job_card_data.next_service_type:
+        vehicle = await Vehicle.get(job_card.vehicle_id)
+        if vehicle:
+            if job_card_data.next_service_date is not None:
+                vehicle.next_service_date = job_card_data.next_service_date
+            if job_card_data.next_service_type is not None:
+                vehicle.next_service_type = job_card_data.next_service_type
+            await vehicle.save()
     
     return await populate_job_card_details(job_card)
 

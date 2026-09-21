@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from app.core.datetime_utils import get_current_time
 
 FuelLevel = Literal["Empty", "Quarter", "Half", "Full"]
-JobStatus = Literal["In Progress", "Delivered", "Pending Delivery"]
+JobStatus = Literal["In Progress", "Delivered", "Pending Delivery", "Completed"]
 
 JOB_TYPE_MAP = {
     "BD": "Breakdown",
@@ -17,7 +17,23 @@ JOB_TYPE_MAP = {
     "WC": "Washing / Cleaning",
     "TY": "Tyre / Wheel Service",
     "EM": "Electrical / Electronics",
+    "RW": "Repeat Work",
 }
+
+NEXT_SERVICE_TYPES = [
+    {"service_type": "General / Basic Service", "typical_work": "Engine oil, oil filter, inspection"},
+    {"service_type": "Minor Service", "typical_work": "Oil, filters, fluid checks, inspection"},
+    {"service_type": "Major Service", "typical_work": "Oil, filters, fluids, detailed inspection"},
+    {"service_type": "Full Service", "typical_work": "Comprehensive vehicle inspection and maintenance"},
+    {"service_type": "AC Service", "typical_work": "AC inspection, gas, filter, cooling check"},
+    {"service_type": "Brake Service", "typical_work": "Brake inspection, cleaning, pad/disc check"},
+    {"service_type": "Engine Service", "typical_work": "Engine inspection and related maintenance"},
+    {"service_type": "Transmission Service", "typical_work": "Gearbox/transmission oil and inspection"},
+    {"service_type": "Wheel / Tyre Service", "typical_work": "Alignment, balancing, tyre inspection"},
+    {"service_type": "Electrical Service", "typical_work": "Battery, lights, wiring, electrical checks"},
+    {"service_type": "Cooling System Service", "typical_work": "Coolant, radiator and hose inspection"},
+    {"service_type": "Periodic Maintenance", "typical_work": "Manufacturer-scheduled maintenance"},
+]
 
 class JobCardBase(BaseModel):
     customer_id: PydanticObjectId = Field(..., description="Linked customer account ID")
@@ -40,7 +56,9 @@ class JobCardBase(BaseModel):
     
     # Fuel status
     fuel_level: FuelLevel = Field(..., description="Current fuel gauge level")
-    job_type: str = Field(default="GS", description="Job type code (BD, PS, RR, BW, AC, GS, WC, TY, EM)")
+    job_type: str = Field(default="GS", description="Job type code (BD, PS, RR, BW, AC, GS, WC, TY, EM, RW)")
+    next_service_date: Optional[datetime] = Field(default=None, description="Recommended next service date")
+    next_service_type: Optional[str] = Field(default=None, description="Recommended next service type")
 
 class JobCard(Document, JobCardBase):
     job_no: str = Field(..., unique=True, description="Unique human-readable job number (e.g. JOB-2401)")
@@ -85,6 +103,8 @@ class JobCardUpdate(BaseModel):
     floor_mats_present: Optional[bool] = None
     
     fuel_level: Optional[FuelLevel] = None
+    next_service_date: Optional[datetime] = None
+    next_service_type: Optional[str] = None
 
 class JobCardOut(JobCardBase):
     id: PydanticObjectId
