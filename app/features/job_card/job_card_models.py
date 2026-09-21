@@ -7,6 +7,18 @@ from app.core.datetime_utils import get_current_time
 FuelLevel = Literal["Empty", "Quarter", "Half", "Full"]
 JobStatus = Literal["In Progress", "Delivered", "Pending Delivery"]
 
+JOB_TYPE_MAP = {
+    "BD": "Breakdown",
+    "PS": "Periodic Service",
+    "RR": "Running Repair",
+    "BW": "Body Work",
+    "AC": "Accident / Insurance Claim",
+    "GS": "General Service",
+    "WC": "Washing / Cleaning",
+    "TY": "Tyre / Wheel Service",
+    "EM": "Electrical / Electronics",
+}
+
 class JobCardBase(BaseModel):
     customer_id: PydanticObjectId = Field(..., description="Linked customer account ID")
     vehicle_id: PydanticObjectId = Field(..., description="Linked registered vehicle ID")
@@ -27,6 +39,7 @@ class JobCardBase(BaseModel):
     
     # Fuel status
     fuel_level: FuelLevel = Field(..., description="Current fuel gauge level")
+    job_type: str = Field(default="GS", description="Job type code (BD, PS, RR, BW, AC, GS, WC, TY, EM)")
 
 class JobCard(Document, JobCardBase):
     job_no: str = Field(..., unique=True, description="Unique human-readable job number (e.g. JOB-2401)")
@@ -43,6 +56,7 @@ class JobCard(Document, JobCardBase):
             "vehicle_id",
             "mechanic_id",
             "status",
+            "job_type",
         ]
 
 class JobCardCreate(JobCardBase):
@@ -53,6 +67,7 @@ class JobCardUpdate(BaseModel):
     vehicle_id: Optional[PydanticObjectId] = None
     mechanic_id: Optional[PydanticObjectId] = None
     status: Optional[JobStatus] = None
+    job_type: Optional[str] = None
     customer_complaint: Optional[str] = None
     technician_observation: Optional[str] = None
     repair_notes: Optional[str] = None
@@ -71,6 +86,8 @@ class JobCardOut(JobCardBase):
     id: PydanticObjectId
     job_no: str
     status: JobStatus
+    job_type: str = "GS"
+    job_type_name: str = "General Service"
     created_at: datetime
     updated_at: datetime
     created_by: str

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from app.core.security import get_current_user
-from app.features.job_card.job_card_models import JobCard
+from app.features.job_card.job_card_models import JobCard, JOB_TYPE_MAP
 from app.features.invoice.invoice_models import Invoice
 from app.features.expense.expense_models import Expense
 from app.features.customer.customer_models import Customer
@@ -370,3 +370,122 @@ async def get_pending_payment_customers(
     # Sort by days pending (longest pending first)
     results.sort(key=lambda x: x["days_pending"], reverse=True)
     return results
+
+@router.get("/job-type-report")
+async def get_job_type_report(
+    start_date: Optional[datetime] = Query(default=None),
+    end_date: Optional[datetime] = Query(default=None),
+    current_user: dict = Depends(get_current_user)
+):
+    now = get_current_time()
+    
+    if start_date:
+        start_dt = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0)
+    else:
+        # Default to last 30 days
+        start_dt = datetime(now.year, now.month, now.day, 0, 0, 0) - timedelta(days=30)
+        
+    if end_date:
+        end_dt = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59)
+    else:
+        end_dt = datetime(now.year, now.month, now.day, 23, 59, 59)
+        
+    # Query job cards in date range
+    job_cards = await JobCard.find(
+        JobCard.created_at >= start_dt,
+        JobCard.created_at <= end_dt
+    ).to_list()
+    
+    total_jobs = len(job_cards)
+    
+    # Query non-draft invoices linked to these job cards
+    jc_ids = [jc.id for jc in job_cards]
+    invoices = await Invoice.find(
+        {"job_card_id": {"$in": jc_ids}},
+        {"is_draft": {"$ne": True}}
+    ).to_list() if jc_ids else []
+    
+    # Group invoices by job_card_id
+    inv_map = {inv.job_card_id: inv for inv in invoices}
+    
+    # Pre-populate all 9 job types from JOB_TYPE_MAP
+    stats_by_type = {}
+    for code, name in JOB_TYPE_MAP.items():
+        stats_by_type[code] = {
+            "code": code,
+            "name": name,
+            "total_jobs": 0,
+            "in_progress": 0,
+            "pending_delivery": 0,
+            "delivered": 0,
+            "total_billed": 0.0,
+            "paid_revenue": 0.0,
+            "percentage": 0.0,
+        }
+        
+    total_billed_all = 0.0
+    total_paid_all = 0.0
+    
+    for jc in job_cards:
+        jtype = getattr(jc, "job_type", None) or "GS"
+        if jtype not in stats_by_type:
+            stats_by_type[jtype] = {
+                "code": jtype,
+                "name": JOB_TYPE_MAP.get(jtype, jtype),
+                "total_jobs": 0,
+                "in_progress": 0,
+                "pending_delivery": 0,
+                "delivered": 0,
+                "total_billed": 0.0,
+                "paid_revenue": 0.0,
+                "percentage": 0.0,
+            }
+            
+        stats = stats_by_type[jtype]
+        stats["total_jobs"] += 1
+        
+        if jc.status == "In Progress":
+            stats["in_progress"] += 1
+        elif jc.status == "Pending Delivery":
+            stats["pending_delivery"] += 1
+        elif jc.status == "Delivered":
+            stats["delivered"] += 1
+            
+        inv = inv_map.get(jc.id)
+        if inv:
+            billed = inv.grand_total or 0.0
+            paid = inv.grand_total if inv.payment_status == "Paid" else (inv.paid_amount if inv.payment_status == "Partial" else 0.0)
+            stats["total_billed"] += billed
+            stats["paid_revenue"] += paid
+            total_billed_all += billed
+            total_paid_all += paid
+
+    # Compute percentage
+    breakdown_list = []
+    for code in JOB_TYPE_MAP.keys():
+        stats = stats_by_type.get(code)
+        if stats:
+            stats["percentage"] = round((stats["total_jobs"] / total_jobs * 100), 1) if total_jobs > 0 else 0.0
+            stats["total_billed"] = round(stats["total_billed"], 2)
+            stats["paid_revenue"] = round(stats["paid_revenue"], 2)
+            breakdown_list.append(stats)
+            
+    # Include any custom/unmapped types if present
+    for code, stats in stats_by_type.items():
+        if code not in JOB_TYPE_MAP:
+            stats["percentage"] = round((stats["total_jobs"] / total_jobs * 100), 1) if total_jobs > 0 else 0.0
+            stats["total_billed"] = round(stats["total_billed"], 2)
+            stats["paid_revenue"] = round(stats["paid_revenue"], 2)
+            breakdown_list.append(stats)
+            
+    # Sort breakdown: highest total_jobs first
+    breakdown_list.sort(key=lambda x: (x["total_jobs"], x["total_billed"]), reverse=True)
+    
+    return {
+        "start_date": start_dt.isoformat(),
+        "end_date": end_dt.isoformat(),
+        "total_jobs": total_jobs,
+        "total_billed": round(total_billed_all, 2),
+        "total_paid": round(total_paid_all, 2),
+        "breakdown": breakdown_list
+    }

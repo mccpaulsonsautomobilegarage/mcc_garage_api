@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
 from beanie import PydanticObjectId
-from app.features.job_card.job_card_models import JobCard, JobCardCreate, JobCardUpdate, JobCardOut, JobStatus
+from app.features.job_card.job_card_models import JobCard, JobCardCreate, JobCardUpdate, JobCardOut, JobStatus, JOB_TYPE_MAP
 from app.features.customer.customer_models import Customer
 from app.features.vehicle.vehicle_models import Vehicle
 from app.features.user.user_models import User
@@ -19,8 +19,13 @@ async def populate_job_card_details(job_card: JobCard) -> JobCardOut:
     mechanic = await User.get(job_card.mechanic_id)
     invoice = await Invoice.find_one(Invoice.job_card_id == job_card.id)
     
+    data = job_card.model_dump()
+    job_type = data.get("job_type") or getattr(job_card, "job_type", None) or "GS"
+    data["job_type"] = job_type
+    data["job_type_name"] = JOB_TYPE_MAP.get(job_type, "General Service")
+    
     return JobCardOut(
-        **job_card.model_dump(),
+        **data,
         mechanic_name=mechanic.full_name if mechanic else "Unknown Mechanic",
         vehicle_number=vehicle.registration_number if vehicle else "Unknown Vehicle",
         customer_name=customer.name if customer else "Unknown Customer",
@@ -49,19 +54,25 @@ async def populate_job_cards_list(job_cards: List[JobCard]) -> List[JobCardOut]:
     mech_map = {m.id: m.full_name for m in mechanics}
     invoice_map = {inv.job_card_id: inv for inv in invoices}
     
-    return [
-        JobCardOut(
-            **jc.model_dump(),
-            mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
-            vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
-            customer_name=cust_map.get(jc.customer_id, "Unknown Customer"),
-            payment_status=invoice_map[jc.id].payment_status if (jc.id in invoice_map and not invoice_map[jc.id].is_draft) else "Unpaid",
-            is_invoice_created=jc.id in invoice_map,
-            is_invoice_draft=invoice_map[jc.id].is_draft if jc.id in invoice_map else False,
-            invoice_id=str(invoice_map[jc.id].id) if jc.id in invoice_map else None
+    result = []
+    for jc in job_cards:
+        data = jc.model_dump()
+        j_type = data.get("job_type") or getattr(jc, "job_type", None) or "GS"
+        data["job_type"] = j_type
+        data["job_type_name"] = JOB_TYPE_MAP.get(j_type, "General Service")
+        result.append(
+            JobCardOut(
+                **data,
+                mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
+                vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
+                customer_name=cust_map.get(jc.customer_id, "Unknown Customer"),
+                payment_status=invoice_map[jc.id].payment_status if (jc.id in invoice_map and not invoice_map[jc.id].is_draft) else "Unpaid",
+                is_invoice_created=jc.id in invoice_map,
+                is_invoice_draft=invoice_map[jc.id].is_draft if jc.id in invoice_map else False,
+                invoice_id=str(invoice_map[jc.id].id) if jc.id in invoice_map else None
+            )
         )
-        for jc in job_cards
-    ]
+    return result
 
 async def generate_next_job_no() -> str:
     now = get_current_time()
@@ -123,6 +134,7 @@ async def create_job_card(job_card_data: JobCardCreate, current_user: dict = Dep
         vehicle_id=job_card_data.vehicle_id,
         mechanic_id=job_card_data.mechanic_id,
         status="In Progress", # Default initial status
+        job_type=job_card_data.job_type or "GS",
         customer_complaint=job_card_data.customer_complaint,
         technician_observation=job_card_data.technician_observation,
         repair_notes=job_card_data.repair_notes,
@@ -145,6 +157,7 @@ async def list_job_cards(
     vehicle_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by vehicle ID"),
     mechanic_id: Optional[PydanticObjectId] = Query(default=None, description="Filter by assigned mechanic ID"),
     status: Optional[JobStatus] = Query(default=None, description="Filter by job status"),
+    job_type: Optional[str] = Query(default=None, description="Filter by job type code (BD, PS, RR, BW, AC, GS, WC, TY, EM)"),
     payment_status: Optional[str] = Query(default=None, description="Filter by payment status (Paid, Unpaid)"),
     search: Optional[str] = Query(default=None, description="Search by Job Number, Customer Name, or Vehicle Registration Number"),
     start_date: Optional[datetime] = Query(default=None, description="Start date for filtering"),
@@ -160,6 +173,8 @@ async def list_job_cards(
         query["mechanic_id"] = mechanic_id
     if status:
         query["status"] = status
+    if job_type and job_type.strip().upper() != "ALL":
+        query["job_type"] = job_type.strip().upper()
         
     if start_date or end_date:
         date_query = {}
