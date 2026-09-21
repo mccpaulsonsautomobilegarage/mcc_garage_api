@@ -53,13 +53,13 @@ async def get_dashboard_stats(
     today_labor_total = 0.0
     for inv in invoices:
         if inv.payment_status == "Paid":
-            today_revenue += inv.grand_total
-            today_spare_parts_total += inv.spare_parts_total
-            today_labor_total += inv.labor_total
+            today_revenue += inv.grand_total or 0.0
+            today_spare_parts_total += inv.spare_parts_total or 0.0
+            today_labor_total += inv.labor_total or 0.0
         elif inv.payment_status == "Partial":
-            today_revenue += inv.paid_amount
-            today_spare_parts_total += inv.spare_parts_total
-            today_labor_total += inv.labor_total
+            today_revenue += inv.paid_amount or 0.0
+            today_spare_parts_total += inv.spare_parts_total or 0.0
+            today_labor_total += inv.labor_total or 0.0
     
     # Determine target month for monthly stats
     target_year = start_dt.year
@@ -83,13 +83,13 @@ async def get_dashboard_stats(
     monthly_labor_total = 0.0
     for inv in monthly_invoices:
         if inv.payment_status == "Paid":
-            monthly_revenue += inv.grand_total
-            monthly_spare_parts_total += inv.spare_parts_total
-            monthly_labor_total += inv.labor_total
+            monthly_revenue += inv.grand_total or 0.0
+            monthly_spare_parts_total += inv.spare_parts_total or 0.0
+            monthly_labor_total += inv.labor_total or 0.0
         elif inv.payment_status == "Partial":
-            monthly_revenue += inv.paid_amount
-            monthly_spare_parts_total += inv.spare_parts_total
-            monthly_labor_total += inv.labor_total
+            monthly_revenue += inv.paid_amount or 0.0
+            monthly_spare_parts_total += inv.spare_parts_total or 0.0
+            monthly_labor_total += inv.labor_total or 0.0
     
     # 4. Pending Payments (sum of balance due across Pending and Partial status non-draft invoices)
     all_invoices = await Invoice.find({"is_draft": {"$ne": True}}).to_list()
@@ -137,8 +137,14 @@ async def get_dashboard_stats(
     top_vehicles = [{"brand_model": k, "visits": v} for k, v in veh_counts.most_common(5)]
 
     # 10. Mechanic Productivity
-    mech_ids = list({jc.mechanic_id for jc in job_cards if jc.mechanic_id})
-    mechanics = await User.find({"_id": {"$in": mech_ids}}).to_list()
+    all_mech_ids = set()
+    for jc in job_cards:
+        ids = getattr(jc, "mechanic_ids", None) or []
+        if not ids and getattr(jc, "mechanic_id", None):
+            ids = [jc.mechanic_id]
+        all_mech_ids.update(ids)
+
+    mechanics = await User.find({"_id": {"$in": list(all_mech_ids)}}).to_list()
     mech_map = {m.id: m.full_name for m in mechanics}
     
     job_card_ids = [jc.id for jc in job_cards]
@@ -147,26 +153,44 @@ async def get_dashboard_stats(
     
     mech_stats = {}
     for jc in job_cards:
-        if not jc.mechanic_id:
-            continue
-        mech_name = mech_map.get(jc.mechanic_id, "Unknown")
-        if mech_name not in mech_stats:
-            mech_stats[mech_name] = {"completed_jobs": 0, "total_jobs": 0, "labor_revenue": 0.0}
+        m_ids = getattr(jc, "mechanic_ids", None) or []
+        if not m_ids and getattr(jc, "mechanic_id", None):
+            m_ids = [jc.mechanic_id]
             
-        mech_stats[mech_name]["total_jobs"] += 1
-        if jc.status == "Delivered":
-            mech_stats[mech_name]["completed_jobs"] += 1
-            if jc.id in invoice_map:
-                mech_stats[mech_name]["labor_revenue"] += invoice_map[jc.id].labor_total
+        if not m_ids:
+            continue
+            
+        num_mechs = len(m_ids)
+        inv = invoice_map.get(jc.id)
+        labor_val = (getattr(inv, "labor_total", 0.0) or 0.0) if inv else 0.0
+        labor_split = (labor_val / num_mechs) if num_mechs > 0 else 0.0
+        
+        for mid in m_ids:
+            mech_name = mech_map.get(mid, "Unknown")
+            if mech_name not in mech_stats:
+                mech_stats[mech_name] = {
+                    "completed_jobs": 0,
+                    "total_jobs": 0,
+                    "active_jobs": 0,
+                    "labor_revenue": 0.0
+                }
+                
+            mech_stats[mech_name]["total_jobs"] += 1
+            if jc.status == "Delivered":
+                mech_stats[mech_name]["completed_jobs"] += 1
+                mech_stats[mech_name]["labor_revenue"] += labor_split
+            else:
+                mech_stats[mech_name]["active_jobs"] += 1
                 
     mechanic_productivity = [
         {
             "name": name,
             "completed_jobs": stats["completed_jobs"],
             "total_jobs": stats["total_jobs"],
-            "labor_revenue": stats["labor_revenue"]
+            "active_jobs": stats["active_jobs"],
+            "labor_revenue": round(stats["labor_revenue"], 2)
         }
-        for name, stats in mech_stats.items()
+        for name, stats in sorted(mech_stats.items(), key=lambda x: x[1]["completed_jobs"], reverse=True)
     ]
     
     # 10. Today's Invoices Summary (for current calendar day)
@@ -185,13 +209,13 @@ async def get_dashboard_stats(
     today_labor_cost_val = 0.0
     
     for inv in today_invoices_list:
-        today_total_billed_val += inv.grand_total
-        today_labor_cost_val += inv.labor_total
+        today_total_billed_val += inv.grand_total or 0.0
+        today_labor_cost_val += inv.labor_total or 0.0
         
         if inv.payment_status == "Paid":
-            today_paid_revenue_val += inv.grand_total
+            today_paid_revenue_val += inv.grand_total or 0.0
         elif inv.payment_status == "Partial":
-            today_paid_revenue_val += inv.paid_amount
+            today_paid_revenue_val += inv.paid_amount or 0.0
     
     return {
         "total_vehicles_today": total_vehicles_today,
@@ -257,18 +281,18 @@ async def get_daily_report(
     veh_count_by_date = {}
     for inv in invoices:
         d_str = inv.created_at.strftime("%Y-%m-%d")
-        inv_by_date[d_str] = inv_by_date.get(d_str, 0.0) + inv.grand_total
+        inv_by_date[d_str] = inv_by_date.get(d_str, 0.0) + (inv.grand_total or 0.0)
         
         # Calculate paid revenue incorporating both Paid and Partial status invoices
         if inv.payment_status == "Paid":
-            paid_val = inv.grand_total
+            paid_val = inv.grand_total or 0.0
         elif inv.payment_status == "Partial":
-            paid_val = inv.paid_amount
+            paid_val = inv.paid_amount or 0.0
         else:
             paid_val = 0.0
             
         paid_inv_by_date[d_str] = paid_inv_by_date.get(d_str, 0.0) + paid_val
-        labor_by_date[d_str] = labor_by_date.get(d_str, 0.0) + inv.labor_total
+        labor_by_date[d_str] = labor_by_date.get(d_str, 0.0) + (inv.labor_total or 0.0)
         veh_count_by_date[d_str] = veh_count_by_date.get(d_str, 0) + 1
             
     exp_by_date = {}
@@ -454,7 +478,7 @@ async def get_job_type_report(
         inv = inv_map.get(jc.id)
         if inv:
             billed = inv.grand_total or 0.0
-            paid = inv.grand_total if inv.payment_status == "Paid" else (inv.paid_amount if inv.payment_status == "Partial" else 0.0)
+            paid = (inv.grand_total or 0.0) if inv.payment_status == "Paid" else ((inv.paid_amount or 0.0) if inv.payment_status == "Partial" else 0.0)
             stats["total_billed"] += billed
             stats["paid_revenue"] += paid
             total_billed_all += billed

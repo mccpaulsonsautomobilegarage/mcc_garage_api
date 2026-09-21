@@ -16,17 +16,28 @@ router = APIRouter(prefix="/job-cards", tags=["Job Cards"])
 async def populate_job_card_details(job_card: JobCard) -> JobCardOut:
     customer = await Customer.get(job_card.customer_id)
     vehicle = await Vehicle.get(job_card.vehicle_id)
-    mechanic = await User.get(job_card.mechanic_id)
     invoice = await Invoice.find_one(Invoice.job_card_id == job_card.id)
     
+    raw_mech_ids = getattr(job_card, "mechanic_ids", None) or []
+    if not raw_mech_ids and getattr(job_card, "mechanic_id", None):
+        raw_mech_ids = [job_card.mechanic_id]
+        
+    mechanics = await User.find({"_id": {"$in": raw_mech_ids}}).to_list() if raw_mech_ids else []
+    mech_names = [m.full_name for m in mechanics]
+    primary_mech_name = ", ".join(mech_names) if mech_names else "Unknown Mechanic"
+    primary_mech_id = raw_mech_ids[0] if raw_mech_ids else None
+
     data = job_card.model_dump()
     job_type = data.get("job_type") or getattr(job_card, "job_type", None) or "GS"
     data["job_type"] = job_type
     data["job_type_name"] = JOB_TYPE_MAP.get(job_type, "General Service")
+    data["mechanic_id"] = primary_mech_id
+    data["mechanic_ids"] = raw_mech_ids
+    data["mechanic_names"] = mech_names
     
     return JobCardOut(
         **data,
-        mechanic_name=mechanic.full_name if mechanic else "Unknown Mechanic",
+        mechanic_name=primary_mech_name,
         vehicle_number=vehicle.registration_number if vehicle else "Unknown Vehicle",
         customer_name=customer.name if customer else "Unknown Customer",
         payment_status=invoice.payment_status if (invoice and not invoice.is_draft) else "Unpaid",
@@ -41,12 +52,19 @@ async def populate_job_cards_list(job_cards: List[JobCard]) -> List[JobCardOut]:
         
     cust_ids = list({jc.customer_id for jc in job_cards})
     veh_ids = list({jc.vehicle_id for jc in job_cards})
-    mech_ids = list({jc.mechanic_id for jc in job_cards})
+    
+    all_mech_ids = set()
+    for jc in job_cards:
+        ids = getattr(jc, "mechanic_ids", None) or []
+        if not ids and getattr(jc, "mechanic_id", None):
+            ids = [jc.mechanic_id]
+        all_mech_ids.update(ids)
+        
     job_card_ids = [jc.id for jc in job_cards]
     
     customers = await Customer.find({"_id": {"$in": cust_ids}}).to_list()
     vehicles = await Vehicle.find({"_id": {"$in": veh_ids}}).to_list()
-    mechanics = await User.find({"_id": {"$in": mech_ids}}).to_list()
+    mechanics = await User.find({"_id": {"$in": list(all_mech_ids)}}).to_list()
     invoices = await Invoice.find({"job_card_id": {"$in": job_card_ids}}).to_list()
     
     cust_map = {c.id: c.name for c in customers}
@@ -60,10 +78,23 @@ async def populate_job_cards_list(job_cards: List[JobCard]) -> List[JobCardOut]:
         j_type = data.get("job_type") or getattr(jc, "job_type", None) or "GS"
         data["job_type"] = j_type
         data["job_type_name"] = JOB_TYPE_MAP.get(j_type, "General Service")
+        
+        jc_mids = getattr(jc, "mechanic_ids", None) or []
+        if not jc_mids and getattr(jc, "mechanic_id", None):
+            jc_mids = [jc.mechanic_id]
+            
+        m_names = [mech_map.get(mid, "Unknown Mechanic") for mid in jc_mids]
+        p_name = ", ".join(m_names) if m_names else "Unknown Mechanic"
+        p_id = jc_mids[0] if jc_mids else None
+        
+        data["mechanic_id"] = p_id
+        data["mechanic_ids"] = jc_mids
+        data["mechanic_names"] = m_names
+        
         result.append(
             JobCardOut(
                 **data,
-                mechanic_name=mech_map.get(jc.mechanic_id, "Unknown Mechanic"),
+                mechanic_name=p_name,
                 vehicle_number=veh_map.get(jc.vehicle_id, "Unknown Vehicle"),
                 customer_name=cust_map.get(jc.customer_id, "Unknown Customer"),
                 payment_status=invoice_map[jc.id].payment_status if (jc.id in invoice_map and not invoice_map[jc.id].is_draft) else "Unpaid",
@@ -112,18 +143,29 @@ async def create_job_card(job_card_data: JobCardCreate, current_user: dict = Dep
             detail="The selected vehicle does not belong to the selected customer"
         )
         
-    # 3. Verify Mechanic exists and has the 'mechanic' role
-    mechanic = await User.get(job_card_data.mechanic_id)
-    if not mechanic:
+    # 3. Verify Mechanics exist and have the 'mechanic' role
+    assigned_mech_ids = job_card_data.mechanic_ids or []
+    if not assigned_mech_ids and job_card_data.mechanic_id:
+        assigned_mech_ids = [job_card_data.mechanic_id]
+        
+    if not assigned_mech_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The assigned mechanic does not exist"
+            detail="At least one mechanic must be assigned"
         )
-    if mechanic.role != "mechanic":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The assigned user is not a mechanic"
-        )
+        
+    for mid in assigned_mech_ids:
+        mechanic = await User.get(mid)
+        if not mechanic:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"The assigned mechanic does not exist"
+            )
+        if mechanic.role != "mechanic":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"The assigned user {mechanic.full_name} is not a mechanic"
+            )
         
     # Generate sequential Job Number
     next_job_no = await generate_next_job_no()
@@ -132,7 +174,8 @@ async def create_job_card(job_card_data: JobCardCreate, current_user: dict = Dep
         job_no=next_job_no,
         customer_id=job_card_data.customer_id,
         vehicle_id=job_card_data.vehicle_id,
-        mechanic_id=job_card_data.mechanic_id,
+        mechanic_id=assigned_mech_ids[0],
+        mechanic_ids=assigned_mech_ids,
         status="In Progress", # Default initial status
         job_type=job_card_data.job_type or "GS",
         customer_complaint=job_card_data.customer_complaint,
@@ -169,8 +212,6 @@ async def list_job_cards(
         query["customer_id"] = customer_id
     if vehicle_id:
         query["vehicle_id"] = vehicle_id
-    if mechanic_id:
-        query["mechanic_id"] = mechanic_id
     if status:
         query["status"] = status
     if job_type and job_type.strip().upper() != "ALL":
@@ -208,26 +249,37 @@ async def list_job_cards(
             invoice_job_card_ids = [inv.job_card_id for inv in non_draft_invoices]
             query["_id"] = {"$nin": invoice_job_card_ids}
 
+    and_conditions = []
+    if mechanic_id:
+        and_conditions.append({
+            "$or": [
+                {"mechanic_ids": mechanic_id},
+                {"mechanic_id": mechanic_id}
+            ]
+        })
+
     if search:
         search_str = search.strip()
-        # Find matching customer IDs
         matching_customers = await Customer.find({"name": {"$regex": search_str, "$options": "i"}}).to_list()
         cust_ids = [c.id for c in matching_customers]
-        
-        # Find matching vehicle IDs
         matching_vehicles = await Vehicle.find({"registration_number": {"$regex": search_str, "$options": "i"}}).to_list()
         veh_ids = [v.id for v in matching_vehicles]
         
-        # Construct $or query conditions
-        conditions = [
+        search_conditions = [
             {"job_no": {"$regex": search_str, "$options": "i"}}
         ]
         if cust_ids:
-            conditions.append({"customer_id": {"$in": cust_ids}})
+            search_conditions.append({"customer_id": {"$in": cust_ids}})
         if veh_ids:
-            conditions.append({"vehicle_id": {"$in": veh_ids}})
+            search_conditions.append({"vehicle_id": {"$in": veh_ids}})
             
-        query["$or"] = conditions
+        and_conditions.append({"$or": search_conditions})
+
+    if and_conditions:
+        if len(and_conditions) == 1:
+            query["$or"] = and_conditions[0]["$or"]
+        else:
+            query["$and"] = and_conditions
         
     job_cards = await JobCard.find(query).sort("-created_at").to_list()
     return await populate_job_cards_list(job_cards)
@@ -314,7 +366,27 @@ async def update_job_card(
                 detail="The selected vehicle does not belong to the selected customer"
             )
             
-    if job_card_data.mechanic_id and job_card_data.mechanic_id != job_card.mechanic_id:
+    if job_card_data.mechanic_ids is not None:
+        if len(job_card_data.mechanic_ids) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one mechanic must be assigned"
+            )
+        for mid in job_card_data.mechanic_ids:
+            m = await User.get(mid)
+            if not m:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"The assigned mechanic {mid} does not exist"
+                )
+            if m.role != "mechanic":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"The assigned user {m.full_name} is not a mechanic"
+                )
+        job_card.mechanic_ids = job_card_data.mechanic_ids
+        job_card.mechanic_id = job_card_data.mechanic_ids[0]
+    elif job_card_data.mechanic_id and job_card_data.mechanic_id != job_card.mechanic_id:
         mechanic = await User.get(job_card_data.mechanic_id)
         if not mechanic:
             raise HTTPException(
@@ -326,8 +398,12 @@ async def update_job_card(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="The assigned user is not a mechanic"
             )
+        job_card.mechanic_id = job_card_data.mechanic_id
+        job_card.mechanic_ids = [job_card_data.mechanic_id]
             
     update_dict = job_card_data.model_dump(exclude_unset=True)
+    update_dict.pop("mechanic_id", None)
+    update_dict.pop("mechanic_ids", None)
     for key, value in update_dict.items():
         setattr(job_card, key, value)
         

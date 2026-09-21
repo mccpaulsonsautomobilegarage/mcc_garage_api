@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, Field
 from app.core.datetime_utils import get_current_time
@@ -22,7 +22,8 @@ JOB_TYPE_MAP = {
 class JobCardBase(BaseModel):
     customer_id: PydanticObjectId = Field(..., description="Linked customer account ID")
     vehicle_id: PydanticObjectId = Field(..., description="Linked registered vehicle ID")
-    mechanic_id: PydanticObjectId = Field(..., description="Assigned mechanic user ID")
+    mechanic_id: Optional[PydanticObjectId] = Field(default=None, description="Primary assigned mechanic user ID (legacy/compatibility)")
+    mechanic_ids: List[PydanticObjectId] = Field(default=[], description="List of assigned mechanic user IDs")
     customer_complaint: str = Field(..., description="Description of customer complaints/requests")
     technician_observation: Optional[str] = Field(default=None, description="Observations from the technician")
     repair_notes: Optional[str] = Field(default=None, description="Notes about repairs performed")
@@ -55,17 +56,20 @@ class JobCard(Document, JobCardBase):
             "customer_id",
             "vehicle_id",
             "mechanic_id",
+            "mechanic_ids",
             "status",
             "job_type",
         ]
 
 class JobCardCreate(JobCardBase):
-    pass
+    mechanic_id: Optional[PydanticObjectId] = None
+    mechanic_ids: Optional[List[PydanticObjectId]] = None
 
 class JobCardUpdate(BaseModel):
     customer_id: Optional[PydanticObjectId] = None
     vehicle_id: Optional[PydanticObjectId] = None
     mechanic_id: Optional[PydanticObjectId] = None
+    mechanic_ids: Optional[List[PydanticObjectId]] = None
     status: Optional[JobStatus] = None
     job_type: Optional[str] = None
     customer_complaint: Optional[str] = None
@@ -91,7 +95,10 @@ class JobCardOut(JobCardBase):
     created_at: datetime
     updated_at: datetime
     created_by: str
+    mechanic_id: Optional[PydanticObjectId] = None
     mechanic_name: Optional[str] = None
+    mechanic_ids: List[PydanticObjectId] = []
+    mechanic_names: List[str] = []
     vehicle_number: str = ""
     customer_name: str = ""
     payment_status: str = "Unpaid"
