@@ -9,6 +9,7 @@ from app.features.vehicle.vehicle_models import Vehicle
 from app.features.job_card.job_card_models import JobCard
 from app.features.invoice.invoice_models import Invoice
 from app.features.expense.expense_models import Expense
+from app.features.notification.notification_models import DeviceToken
 
 async def init_db():
     client = AsyncIOMotorClient(settings.MONGODB_URL)
@@ -25,6 +26,7 @@ async def init_db():
             JobCard,
             Invoice,
             Expense,
+            DeviceToken,
         ]
     )
 

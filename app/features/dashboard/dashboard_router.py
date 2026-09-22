@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
+from pydantic import BaseModel, Field
+from beanie import PydanticObjectId
 from app.core.security import get_current_user
 from app.features.job_card.job_card_models import JobCard, JOB_TYPE_MAP, NEXT_SERVICE_TYPES
 from app.features.invoice.invoice_models import Invoice
@@ -483,6 +485,79 @@ async def get_due_services(
 
     results.sort(key=lambda x: (x["days_overdue"], x["next_service_date"]), reverse=True)
     return results
+
+class RescheduleServiceRequest(BaseModel):
+    vehicle_id: PydanticObjectId = Field(..., description="Vehicle ID to reschedule")
+    next_service_date: datetime = Field(..., description="New recommended next service date")
+    next_service_type: Optional[str] = Field(default=None, description="Optional updated service type")
+
+class DismissServiceRequest(BaseModel):
+    vehicle_id: PydanticObjectId = Field(..., description="Vehicle ID to dismiss reminder")
+
+@router.post("/due-services/reschedule")
+async def reschedule_due_service(
+    body: RescheduleServiceRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    vehicle = await Vehicle.get(body.vehicle_id)
+    if not vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehicle not found"
+        )
+        
+    vehicle.next_service_date = body.next_service_date
+    if body.next_service_type:
+        vehicle.next_service_type = body.next_service_type
+    vehicle.updated_at = get_current_time()
+    await vehicle.save()
+    
+    # Also update the latest job card for this vehicle if it had a next_service_date
+    latest_jc = await JobCard.find(JobCard.vehicle_id == vehicle.id).sort(-JobCard.created_at).first_or_none()
+    if latest_jc:
+        latest_jc.next_service_date = body.next_service_date
+        if body.next_service_type:
+            latest_jc.next_service_type = body.next_service_type
+        latest_jc.updated_at = get_current_time()
+        await latest_jc.save()
+        
+    return {
+        "message": "Service reminder rescheduled successfully",
+        "vehicle_id": str(vehicle.id),
+        "next_service_date": body.next_service_date.isoformat(),
+        "next_service_type": vehicle.next_service_type
+    }
+
+@router.post("/due-services/dismiss")
+async def dismiss_due_service(
+    body: DismissServiceRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    vehicle = await Vehicle.get(body.vehicle_id)
+    if not vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehicle not found"
+        )
+        
+    vehicle.next_service_date = None
+    vehicle.next_service_type = None
+    vehicle.updated_at = get_current_time()
+    await vehicle.save()
+    
+    # Also clear on job cards for this vehicle
+    job_cards = await JobCard.find(JobCard.vehicle_id == vehicle.id).to_list()
+    for jc in job_cards:
+        if jc.next_service_date is not None:
+            jc.next_service_date = None
+            jc.next_service_type = None
+            jc.updated_at = get_current_time()
+            await jc.save()
+            
+    return {
+        "message": "Service reminder dismissed successfully",
+        "vehicle_id": str(vehicle.id)
+    }
 
 
 @router.get("/job-type-report")
